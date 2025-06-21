@@ -26,7 +26,7 @@ else:
     )
 
 
-def st_geomap(geojson=None, key=None):
+def st_geomap(geojson=None, feature_layers=None, key=None):
     """Create a new instance of the geomap component.
     
     Parameters
@@ -35,6 +35,14 @@ def st_geomap(geojson=None, key=None):
         A GeoJSON feature collection to display on the map. If provided,
         the map will render the features as graphics and automatically
         center and zoom to show all features.
+    feature_layers : list or None
+        A list of FeatureLayer configurations. Each configuration can include:
+        - url: Feature service URL
+        - portal_item_id: ArcGIS Online/Portal item ID
+        - api_key: API key for authentication
+        - oauth_token: OAuth token for authentication
+        - renderer: Custom renderer configuration
+        - label_info: Labeling configuration
     key : str or None
         An optional key that uniquely identifies this component. If this is
         None, and the component's arguments are changed, the component will
@@ -45,7 +53,12 @@ def st_geomap(geojson=None, key=None):
     dict
         The component's return value
     """
-    component_value = _component_func(geojson=geojson, key=key, default=None)
+    component_value = _component_func(
+        geojson=geojson, 
+        feature_layers=feature_layers, 
+        key=key, 
+        default=None
+    )
     return component_value
 
 
@@ -55,8 +68,28 @@ if not _RELEASE:
 
     st.subheader("Streamlit Geomap Component Demo")
     
-    # Create an instance of our component with a key for state management
-    result = st_geomap(key="demo_geomap")
+    # Feature showcase
+    st.markdown("""
+    **New FeatureLayer Support!** 🎉
+    
+    This component now supports ArcGIS FeatureLayers with:
+    - Layer URLs and Portal Item IDs
+    - API Key and OAuth authentication  
+    - Custom renderers and labeling
+    - Full backward compatibility with GeoJSON
+    """)
+    
+    # Demo configuration
+    demo_feature_layers = [
+        {
+            "url": "https://services.arcgis.com/P3ePLMYs2RVChkJx/ArcGIS/rest/services/USA_States_Generalized/FeatureServer/0",
+            "title": "USA States Demo",
+            "visible": True
+        }
+    ]
+    
+    # Create an instance of our component with FeatureLayer support
+    result = st_geomap(feature_layers=demo_feature_layers, key="demo_geomap")
     
     # Show the return value of the component
     if result:
