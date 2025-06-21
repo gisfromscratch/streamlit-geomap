@@ -69,8 +69,12 @@ class GeomapComponent extends StreamlitComponentBase<State> {
   public render = (): React.ReactNode => {
     const { mapLoaded, error } = this.state
     
+    // Get size props from arguments, with defaults
+    const height = this.props.args.height || "400px"
+    const width = this.props.args.width || "100%"
+    
     return (
-      <div style={{ width: "100%", height: "400px" }}>
+      <div style={{ width: width, height: height }}>
         <div 
           ref={this.mapRef}
           style={{ 
@@ -184,6 +188,37 @@ class GeomapComponent extends StreamlitComponentBase<State> {
       clearTimeout(this.hoverThrottleTimeout)
       this.hoverThrottleTimeout = null
     }
+  }
+
+  private createLayersFromConfigs = (layerConfigs: any[]): FeatureLayer[] => {
+    const layers: FeatureLayer[] = []
+    
+    layerConfigs.forEach(config => {
+      try {
+        if (config.type === 'feature') {
+          // Convert to FeatureLayerConfig format and use existing method
+          const featureConfig: FeatureLayerConfig = {
+            url: config.url,
+            portal_item_id: config.portal_item_id,
+            api_key: config.api_key,
+            oauth_token: config.oauth_token,
+            renderer: config.renderer,
+            label_info: config.label_info,
+            title: config.title,
+            visible: config.visible
+          }
+          
+          const featureLayers = this.createFeatureLayers([featureConfig])
+          layers.push(...featureLayers)
+        }
+        // Note: 'geojson' and 'graphics' layer types would be handled here
+        // but for now we focus on feature layers to maintain existing functionality
+      } catch (error) {
+        console.error("Error creating layer:", error, config)
+      }
+    })
+    
+    return layers
   }
 
   private createFeatureLayers = (configs: FeatureLayerConfig[]): FeatureLayer[] => {
@@ -467,27 +502,39 @@ class GeomapComponent extends StreamlitComponentBase<State> {
       // Create a graphics layer for GeoJSON features
       this.graphicsLayer = new GraphicsLayer()
 
-      // Create FeatureLayers if provided
-      const featureLayerConfigs = this.props.args.feature_layers as FeatureLayerConfig[]
-      if (featureLayerConfigs && Array.isArray(featureLayerConfigs)) {
-        this.featureLayers = this.createFeatureLayers(featureLayerConfigs)
+      // Get configuration from props
+      const basemap = this.props.args.basemap || "topo-vector"
+      const center = this.props.args.center || [-118.244, 34.052] // Default: Los Angeles coordinates
+      const zoom = this.props.args.zoom || 12
+      // Note: viewMode (2d/3d) support would require SceneView for 3D - keeping as 2D for now
+      
+      // Handle layers - support both new 'layers' and legacy 'feature_layers' 
+      let allFeatureLayers: FeatureLayer[] = []
+      
+      // New layers prop takes precedence
+      if (this.props.args.layers && Array.isArray(this.props.args.layers)) {
+        const layerConfigs = this.props.args.layers
+        allFeatureLayers = this.createLayersFromConfigs(layerConfigs)
+      } 
+      // Fallback to legacy feature_layers for backward compatibility
+      else if (this.props.args.feature_layers && Array.isArray(this.props.args.feature_layers)) {
+        const featureLayerConfigs = this.props.args.feature_layers as FeatureLayerConfig[]
+        allFeatureLayers = this.createFeatureLayers(featureLayerConfigs)
       }
+      
+      this.featureLayers = allFeatureLayers
 
-      // Create a Map instance with a basemap
+      // Create a Map instance with configurable basemap
       const allLayers = [this.graphicsLayer, ...this.featureLayers]
       const map = new Map({
-        basemap: "topo-vector", // Topographic basemap
+        basemap: basemap,
         layers: allLayers
       })
 
       // Get GeoJSON data from props
       const geojson = this.props.args.geojson as GeoJSONFeatureCollection
 
-      // Default center and zoom
-      let center: number[] = [-118.244, 34.052] // Los Angeles coordinates
-      let zoom = 12
-
-      // Create a MapView instance
+      // Create a MapView instance with configurable properties
       this.mapView = new MapView({
         container: this.mapRef.current,
         map: map,
@@ -517,7 +564,7 @@ class GeomapComponent extends StreamlitComponentBase<State> {
       // Set component value to indicate successful initialization
       this.props.args.Streamlit.setComponentValue({
         status: "map_loaded",
-        basemap: "topo-vector",
+        basemap: basemap,
         center: [this.mapView.center.longitude, this.mapView.center.latitude],
         zoom: this.mapView.zoom,
         featuresRendered: geojson?.features?.length || 0,
