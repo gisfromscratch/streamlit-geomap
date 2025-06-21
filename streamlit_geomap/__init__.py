@@ -26,7 +26,7 @@ else:
     )
 
 
-def st_geomap(geojson=None, feature_layers=None, key=None):
+def st_geomap(geojson=None, feature_layers=None, enable_selection=True, enable_hover=True, key=None):
     """Create a new instance of the geomap component.
     
     Parameters
@@ -43,6 +43,13 @@ def st_geomap(geojson=None, feature_layers=None, key=None):
         - oauth_token: OAuth token for authentication
         - renderer: Custom renderer configuration
         - label_info: Labeling configuration
+    enable_selection : bool
+        Enable feature selection on click. When True, clicking features will
+        toggle their selection state and send selection events back to Streamlit.
+        Default is True.
+    enable_hover : bool
+        Enable hover events for features. When True, hovering over features will
+        send hover events back to Streamlit and change the cursor. Default is True.
     key : str or None
         An optional key that uniquely identifies this component. If this is
         None, and the component's arguments are changed, the component will
@@ -51,11 +58,18 @@ def st_geomap(geojson=None, feature_layers=None, key=None):
     Returns
     -------
     dict
-        The component's return value
+        The component's return value containing event data:
+        - event: Type of event ('map_clicked', 'feature_hovered', 'feature_selected', 'map_loaded')
+        - coordinates: [longitude, latitude] for click events
+        - feature: Feature data for feature-related events
+        - selectedFeatures: List of selected features for selection events
+        - Other event-specific data
     """
     component_value = _component_func(
         geojson=geojson, 
-        feature_layers=feature_layers, 
+        feature_layers=feature_layers,
+        enable_selection=enable_selection,
+        enable_hover=enable_hover,
         key=key, 
         default=None
     )
@@ -70,9 +84,15 @@ if not _RELEASE:
     
     # Feature showcase
     st.markdown("""
-    **New FeatureLayer Support!** 🎉
+    **New Interactive Features!** 🎉
     
-    This component now supports ArcGIS FeatureLayers with:
+    This component now supports interactive events and selection:
+    - **Click Events**: Click anywhere on the map to get coordinates
+    - **Feature Selection**: Click on features to select/deselect them
+    - **Hover Events**: Hover over features to see their data
+    - **Selection Highlighting**: Selected features are highlighted with yellow outline
+    
+    Plus existing features:
     - Layer URLs and Portal Item IDs
     - API Key and OAuth authentication  
     - Custom renderers and labeling
@@ -88,8 +108,13 @@ if not _RELEASE:
         }
     ]
     
-    # Create an instance of our component with FeatureLayer support
-    result = st_geomap(feature_layers=demo_feature_layers, key="demo_geomap")
+    # Create an instance of our component with interactive features
+    result = st_geomap(
+        feature_layers=demo_feature_layers, 
+        enable_selection=True,
+        enable_hover=True,
+        key="demo_geomap"
+    )
     
     # Show the return value of the component
     if result:

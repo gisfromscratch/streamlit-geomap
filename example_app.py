@@ -22,9 +22,11 @@ This is a demonstration of the **Streamlit Geomap** component - a custom compone
 for rendering interactive geospatial maps using the ArcGIS Maps SDK for JavaScript.
 
 The component provides:
-- Interactive mapping capabilities
-- **GeoJSON support for rendering point features**
-- **Automatic map centering and zooming**
+- **Interactive click, hover, and selection events**
+- **Feature selection with visual highlighting**
+- **Real-time event data communication**
+- GeoJSON support for rendering point features
+- Automatic map centering and zooming
 - High-performance rendering
 - Seamless integration with Streamlit
 - No IPython dependencies required
@@ -80,6 +82,11 @@ with st.container():
     # Sidebar options
     st.sidebar.header("Map Configuration")
     
+    # Interactive controls
+    st.sidebar.subheader("Interactive Features")
+    enable_selection = st.sidebar.checkbox("Enable Feature Selection", value=True)
+    enable_hover = st.sidebar.checkbox("Enable Hover Events", value=True)
+    
     # Map display options
     map_type = st.sidebar.selectbox(
         "Select Map Type:",
@@ -88,7 +95,12 @@ with st.container():
     
     if map_type == "GeoJSON Only":
         st.sidebar.info("Displaying sample city points with automatic centering")
-        result = st_geomap(geojson=sample_geojson, key="example_geojson")
+        result = st_geomap(
+            geojson=sample_geojson, 
+            enable_selection=enable_selection,
+            enable_hover=enable_hover,
+            key="example_geojson"
+        )
         
     elif map_type == "FeatureLayer Only":
         st.sidebar.info("Displaying FeatureLayer from ArcGIS Online")
@@ -129,7 +141,12 @@ with st.container():
         }
         
         selected_config = feature_layer_configs[layer_option]
-        result = st_geomap(feature_layers=selected_config, key="example_feature_layer")
+        result = st_geomap(
+            feature_layers=selected_config,
+            enable_selection=enable_selection,
+            enable_hover=enable_hover,
+            key="example_feature_layer"
+        )
         
     else:  # Combined
         st.sidebar.info("Displaying both GeoJSON points and FeatureLayer")
@@ -153,7 +170,9 @@ with st.container():
         
         result = st_geomap(
             geojson=sample_geojson, 
-            feature_layers=combined_feature_layer, 
+            feature_layers=combined_feature_layer,
+            enable_selection=enable_selection,
+            enable_hover=enable_hover,
             key="example_combined"
         )
     
@@ -181,10 +200,25 @@ with st.container():
             if result_auth:
                 st.sidebar.json(result_auth)
     
-    # Show the result
+    # Show the result with better formatting
     if result:
-        st.subheader("Component Status")
-        st.json(result)
+        st.subheader("Component Events")
+        
+        event_type = result.get("event", "unknown")
+        
+        if event_type == "map_clicked":
+            st.success(f"🖱️ Map Clicked at [{result['coordinates'][0]:.4f}, {result['coordinates'][1]:.4f}]")
+            if result.get("hasFeature"):
+                st.info("🎯 Clicked on a feature!")
+        elif event_type == "feature_hovered":
+            st.info("👆 Feature being hovered")
+        elif event_type == "feature_selected":
+            st.success(f"✅ Features selected: {result['selectionCount']}")
+        elif event_type == "map_loaded":
+            st.success("🗺️ Map loaded successfully")
+        
+        with st.expander("View Full Event Data"):
+            st.json(result)
     
     # Show the GeoJSON data
     if map_type in ["GeoJSON Only", "Combined GeoJSON + FeatureLayer"]:
@@ -203,25 +237,30 @@ with st.container():
     
     # Add information about new features
     st.markdown("""
-    ### ✨ New FeatureLayer Features
+    ### ✨ New Interactive Features
     
-    This component now supports **ArcGIS FeatureLayers** in addition to GeoJSON data:
+    The component now supports **real-time interactive events**:
     
-    #### 🔗 Layer Sources
-    - **URLs**: Direct links to ArcGIS Feature Services
-    - **Portal Items**: ArcGIS Online/Portal item IDs
+    #### 🖱️ Click Events
+    - **Map Clicks**: Get coordinates of any map location
+    - **Feature Clicks**: Access feature properties and select features
+    - **Real-time Response**: Instant feedback in Streamlit
     
-    #### 🔐 Authentication
-    - **API Keys**: For accessing secured services
-    - **OAuth Tokens**: For user-authenticated access
+    #### 🎯 Feature Selection
+    - **Visual Highlighting**: Selected features get yellow outlines
+    - **Multiple Selection**: Select multiple features simultaneously
+    - **Selection Data**: Get full data of selected features
     
-    #### 🎨 Styling & Labeling
-    - **Custom Renderers**: Define symbols and colors
-    - **Labeling**: Add text labels to features
+    #### 👆 Hover Events
+    - **Feature Detection**: Automatically detects when hovering over features
+    - **Cursor Changes**: Pointer cursor when over features
+    - **Hover Data**: Access feature properties on hover
     
-    #### 🔄 Backward Compatibility
-    - **GeoJSON Support**: Existing GeoJSON functionality preserved
-    - **Combined Usage**: Use both GeoJSON and FeatureLayers together
+    Plus existing FeatureLayer features:
+    - URLs and Portal Item IDs
+    - Authentication (API Key & OAuth)
+    - Custom renderers and labeling
+    - Full backward compatibility
     """)
     
     # Add some information
@@ -237,8 +276,22 @@ with st.container():
     - ✅ **FeatureLayer support (URLs & Portal Items)**
     - ✅ **Authentication (API Key & OAuth)**
     - ✅ **Custom renderers and labeling**
-    - ⏳ Interactive map events (coming next)
+    - ✅ **Interactive click, hover, and selection events**
+    - ✅ **Feature selection with visual highlighting**
+    - ✅ **Real-time event data communication**
     - ⏳ Additional geometry types (coming next)
+    - ⏳ Popup customization (coming next)
+    """)
+    
+    st.markdown("""
+    ### 🧪 Try It Out!
+    
+    **Click**: Click anywhere on the map or on features to see coordinates and data  
+    **Hover**: Move your mouse over features to see hover events  
+    **Select**: Click on features to select them (yellow highlight)  
+    **Multi-select**: Hold and click multiple features to select several at once  
+    
+    All events are captured and displayed in the "Component Events" section above!
     """)
 
 # Add footer
