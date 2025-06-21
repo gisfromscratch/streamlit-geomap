@@ -46,6 +46,8 @@ if result:
     st.write("Map interaction result:", result)
 ```
 
+> 💡 **Tip**: Check out the [`examples/`](examples/) directory for more complete working examples!
+
 ## Supported Data Formats
 
 ### 1. GeoJSON
@@ -718,7 +720,10 @@ streamlit-geomap/
 │   ├── public/
 │   ├── package.json
 │   └── tsconfig.json
-├── example_app.py            # Example Streamlit app
+├── examples/                  # Usage examples
+│   ├── README.md             # Examples documentation
+│   └── basic_usage.py        # Simple usage example
+├── example_app.py            # Comprehensive demo app
 ├── setup.py                  # Python package setup
 └── dev_setup.sh             # Development setup script
 ```
