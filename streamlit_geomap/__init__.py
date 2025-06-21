@@ -26,11 +26,15 @@ else:
     )
 
 
-def st_geomap(key=None):
+def st_geomap(geojson=None, key=None):
     """Create a new instance of the geomap component.
     
     Parameters
     ----------
+    geojson : dict or None
+        A GeoJSON feature collection to display on the map. If provided,
+        the map will render the features as graphics and automatically
+        center and zoom to show all features.
     key : str or None
         An optional key that uniquely identifies this component. If this is
         None, and the component's arguments are changed, the component will
@@ -41,7 +45,7 @@ def st_geomap(key=None):
     dict
         The component's return value
     """
-    component_value = _component_func(key=key, default=None)
+    component_value = _component_func(geojson=geojson, key=key, default=None)
     return component_value
 
 
