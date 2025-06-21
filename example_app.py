@@ -23,26 +23,81 @@ for rendering interactive geospatial maps using the ArcGIS Maps SDK for JavaScri
 
 The component provides:
 - Interactive mapping capabilities
+- **GeoJSON support for rendering point features**
+- **Automatic map centering and zooming**
 - High-performance rendering
 - Seamless integration with Streamlit
 - No IPython dependencies required
 """)
 
+# Sample GeoJSON data
+sample_geojson = {
+    "type": "FeatureCollection",
+    "features": [
+        {
+            "type": "Feature",
+            "geometry": {
+                "type": "Point",
+                "coordinates": [-118.244, 34.052]  # Los Angeles
+            },
+            "properties": {
+                "name": "Los Angeles",
+                "population": 3990456
+            }
+        },
+        {
+            "type": "Feature",
+            "geometry": {
+                "type": "Point",
+                "coordinates": [-122.419, 37.775]  # San Francisco
+            },
+            "properties": {
+                "name": "San Francisco",
+                "population": 883305
+            }
+        },
+        {
+            "type": "Feature",
+            "geometry": {
+                "type": "Point",
+                "coordinates": [-73.935, 40.730]  # New York
+            },
+            "properties": {
+                "name": "New York",
+                "population": 8336817
+            }
+        }
+    ]
+}
+
 # Create the geomap component
-st.subheader("Interactive Geomap")
+st.subheader("Interactive Geomap with GeoJSON")
 
 with st.container():
     # Add some configuration options in the sidebar
     st.sidebar.header("Map Configuration")
-    st.sidebar.info("Configuration options will be added here in future versions")
     
-    # Create the geomap
-    result = st_geomap(key="example_geomap")
+    # Options for GeoJSON display
+    show_geojson = st.sidebar.checkbox("Show GeoJSON Points", value=True)
+    
+    if show_geojson:
+        st.sidebar.info("Displaying sample city points with automatic centering")
+        # Create the geomap with GeoJSON data
+        result = st_geomap(geojson=sample_geojson, key="example_geomap")
+    else:
+        st.sidebar.info("Displaying basic map centered on Los Angeles")
+        # Create the geomap without GeoJSON data
+        result = st_geomap(key="example_geomap_basic")
     
     # Show the result
     if result:
         st.subheader("Component Status")
         st.json(result)
+    
+    # Show the GeoJSON data
+    if show_geojson:
+        st.subheader("GeoJSON Data")
+        st.json(sample_geojson)
     
     # Add some information
     st.markdown("""
@@ -51,9 +106,11 @@ with st.container():
     - ✅ Component scaffold created
     - ✅ Basic React/TypeScript frontend
     - ✅ Python backend integration
-    - ⏳ ArcGIS Maps SDK integration (coming next)
-    - ⏳ Interactive map features (coming next)
-    - ⏳ Data visualization capabilities (coming next)
+    - ✅ ArcGIS Maps SDK integration
+    - ✅ **GeoJSON point rendering**
+    - ✅ **Automatic map centering and zooming**
+    - ⏳ Interactive map events (coming next)
+    - ⏳ Additional geometry types (coming next)
     """)
 
 # Add footer
