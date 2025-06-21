@@ -57,6 +57,8 @@ class GeomapComponent extends StreamlitComponentBase<State> {
   private mapView: MapView | null = null
   private graphicsLayer: GraphicsLayer | null = null
   private featureLayers: FeatureLayer[] = []
+  private lastHoveredFeature: any = null
+  private hoverThrottleTimeout: NodeJS.Timeout | null = null
 
   public state: State = {
     mapLoaded: false,
@@ -176,6 +178,12 @@ class GeomapComponent extends StreamlitComponentBase<State> {
       layer.destroy()
     })
     this.featureLayers = []
+    
+    // Clean up hover throttle timeout
+    if (this.hoverThrottleTimeout) {
+      clearTimeout(this.hoverThrottleTimeout)
+      this.hoverThrottleTimeout = null
+    }
   }
 
   private createFeatureLayers = (configs: FeatureLayerConfig[]): FeatureLayer[] => {
@@ -310,56 +318,72 @@ class GeomapComponent extends StreamlitComponentBase<State> {
   private handlePointerMove = async (event: any): Promise<void> => {
     if (!this.mapView) return
 
-    try {
-      // Get screen point from the event
-      const screenPoint = {
-        x: event.x,
-        y: event.y
-      }
+    // Throttle hover events to avoid too much communication
+    if (this.hoverThrottleTimeout) {
+      clearTimeout(this.hoverThrottleTimeout)
+    }
 
-      // Hit test to find graphics at hover location
-      const response = await this.mapView.hitTest(screenPoint)
-      
-      let hoveredFeature = null
+    this.hoverThrottleTimeout = setTimeout(async () => {
+      try {
+        // Get screen point from the event
+        const screenPoint = {
+          x: event.x,
+          y: event.y
+        }
 
-      // Check if we're hovering over a graphic
-      if (response.results.length > 0) {
-        const hitResult = response.results[0]
-        if (hitResult.type === "graphic" && hitResult.graphic && hitResult.graphic.geometry) {
-          hoveredFeature = {
-            attributes: hitResult.graphic.attributes || {},
-            geometry: {
-              type: hitResult.graphic.geometry.type,
-              coordinates: hitResult.graphic.geometry.type === "point" 
-                ? [(hitResult.graphic.geometry as any).longitude, (hitResult.graphic.geometry as any).latitude]
-                : null
+        // Hit test to find graphics at hover location
+        const response = await this.mapView!.hitTest(screenPoint)
+        
+        let hoveredFeature = null
+
+        // Check if we're hovering over a graphic
+        if (response.results.length > 0) {
+          const hitResult = response.results[0]
+          if (hitResult.type === "graphic" && hitResult.graphic && hitResult.graphic.geometry) {
+            hoveredFeature = {
+              attributes: hitResult.graphic.attributes || {},
+              geometry: {
+                type: hitResult.graphic.geometry.type,
+                coordinates: hitResult.graphic.geometry.type === "point" 
+                  ? [(hitResult.graphic.geometry as any).longitude, (hitResult.graphic.geometry as any).latitude]
+                  : null
+              }
+            }
+
+            // Change cursor to pointer when hovering over features
+            if (this.mapView && this.mapView.container) {
+              this.mapView.container.style.cursor = "pointer"
             }
           }
-
-          // Change cursor to pointer when hovering over features
+        } else {
+          // Reset cursor when not hovering over features
           if (this.mapView && this.mapView.container) {
-            this.mapView.container.style.cursor = "pointer"
+            this.mapView.container.style.cursor = "grab"
           }
         }
-      } else {
-        // Reset cursor when not hovering over features
-        if (this.mapView && this.mapView.container) {
-          this.mapView.container.style.cursor = "grab"
+
+        // Only send hover events if there's a feature being hovered and it's different from last
+        if (hoveredFeature && JSON.stringify(hoveredFeature) !== JSON.stringify(this.lastHoveredFeature)) {
+          this.lastHoveredFeature = hoveredFeature
+          
+          // Check if hover events are enabled
+          const enableHover = this.props.args.enable_hover !== false
+          if (enableHover) {
+            this.props.args.Streamlit.setComponentValue({
+              event: "feature_hovered",
+              feature: hoveredFeature,
+              timestamp: new Date().toISOString()
+            })
+          }
+        } else if (!hoveredFeature && this.lastHoveredFeature) {
+          // Clear last hovered feature when no longer hovering
+          this.lastHoveredFeature = null
         }
-      }
 
-      // Only send hover events if there's a feature being hovered
-      if (hoveredFeature) {
-        this.props.args.Streamlit.setComponentValue({
-          event: "feature_hovered",
-          feature: hoveredFeature,
-          timestamp: new Date().toISOString()
-        })
+      } catch (error) {
+        // Silently handle hover errors to avoid console spam
       }
-
-    } catch (error) {
-      // Silently handle hover errors to avoid console spam
-    }
+    }, 100) // Throttle to 100ms
   }
 
   private handleFeatureSelection = (graphic: Graphic): void => {
