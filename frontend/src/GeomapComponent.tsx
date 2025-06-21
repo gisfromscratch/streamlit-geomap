@@ -15,6 +15,7 @@ import esriConfig from "@arcgis/core/config"
 interface State {
   mapLoaded?: boolean
   error?: string
+  selectedGraphics?: Graphic[]
 }
 
 // Interface for GeoJSON Feature
@@ -59,7 +60,8 @@ class GeomapComponent extends StreamlitComponentBase<State> {
 
   public state: State = {
     mapLoaded: false,
-    error: undefined
+    error: undefined,
+    selectedGraphics: []
   }
 
   public render = (): React.ReactNode => {
@@ -237,6 +239,200 @@ class GeomapComponent extends StreamlitComponentBase<State> {
     return layers
   }
 
+  private addEventHandlers = (): void => {
+    if (!this.mapView) return
+
+    // Handle map click events
+    this.mapView.on("click", (event) => {
+      this.handleMapClick(event)
+    })
+
+    // Handle pointer move for hover effects
+    this.mapView.on("pointer-move", (event) => {
+      this.handlePointerMove(event)
+    })
+  }
+
+  private handleMapClick = async (event: any): Promise<void> => {
+    if (!this.mapView) return
+
+    try {
+      // Get screen point from the event
+      const screenPoint = {
+        x: event.x,
+        y: event.y
+      }
+
+      // Convert screen point to map point
+      const mapPoint = this.mapView.toMap(screenPoint)
+
+      // Hit test to find graphics at click location
+      const response = await this.mapView.hitTest(screenPoint)
+      
+      let clickedGraphic = null
+      let featureData = null
+
+      // Check if we clicked on a graphic
+      if (response.results.length > 0) {
+        const hitResult = response.results[0]
+        if (hitResult.type === "graphic" &&  hitResult.graphic && hitResult.graphic.geometry) {
+          clickedGraphic = hitResult.graphic
+          featureData = {
+            attributes: hitResult.graphic.attributes || {},
+            geometry: {
+              type: hitResult.graphic.geometry.type,
+              coordinates: hitResult.graphic.geometry.type === "point" 
+                ? [(hitResult.graphic.geometry as any).longitude, (hitResult.graphic.geometry as any).latitude]
+                : null
+            }
+          }
+
+          // Handle selection
+          this.handleFeatureSelection(hitResult.graphic)
+        }
+      }
+
+      // Send click event data back to Streamlit
+      this.props.args.Streamlit.setComponentValue({
+        event: "map_clicked",
+        coordinates: [mapPoint.longitude, mapPoint.latitude],
+        screenPoint: screenPoint,
+        feature: featureData,
+        hasFeature: clickedGraphic !== null,
+        timestamp: new Date().toISOString()
+      })
+
+    } catch (error) {
+      console.error("Error handling map click:", error)
+    }
+  }
+
+  private handlePointerMove = async (event: any): Promise<void> => {
+    if (!this.mapView) return
+
+    try {
+      // Get screen point from the event
+      const screenPoint = {
+        x: event.x,
+        y: event.y
+      }
+
+      // Hit test to find graphics at hover location
+      const response = await this.mapView.hitTest(screenPoint)
+      
+      let hoveredFeature = null
+
+      // Check if we're hovering over a graphic
+      if (response.results.length > 0) {
+        const hitResult = response.results[0]
+        if (hitResult.type === "graphic" && hitResult.graphic && hitResult.graphic.geometry) {
+          hoveredFeature = {
+            attributes: hitResult.graphic.attributes || {},
+            geometry: {
+              type: hitResult.graphic.geometry.type,
+              coordinates: hitResult.graphic.geometry.type === "point" 
+                ? [(hitResult.graphic.geometry as any).longitude, (hitResult.graphic.geometry as any).latitude]
+                : null
+            }
+          }
+
+          // Change cursor to pointer when hovering over features
+          if (this.mapView && this.mapView.container) {
+            this.mapView.container.style.cursor = "pointer"
+          }
+        }
+      } else {
+        // Reset cursor when not hovering over features
+        if (this.mapView && this.mapView.container) {
+          this.mapView.container.style.cursor = "grab"
+        }
+      }
+
+      // Only send hover events if there's a feature being hovered
+      if (hoveredFeature) {
+        this.props.args.Streamlit.setComponentValue({
+          event: "feature_hovered",
+          feature: hoveredFeature,
+          timestamp: new Date().toISOString()
+        })
+      }
+
+    } catch (error) {
+      // Silently handle hover errors to avoid console spam
+    }
+  }
+
+  private handleFeatureSelection = (graphic: Graphic): void => {
+    if (!this.mapView) return
+
+    // Get current interactive settings
+    const enableSelection = this.props.args.enable_selection !== false
+
+    if (!enableSelection) return
+
+    // Toggle selection state
+    let newSelectedGraphics = [...(this.state.selectedGraphics || [])]
+    
+    const isAlreadySelected = newSelectedGraphics.some(g => g === graphic)
+    
+    if (isAlreadySelected) {
+      // Deselect
+      newSelectedGraphics = newSelectedGraphics.filter(g => g !== graphic)
+      this.removeSelectionHighlight(graphic)
+    } else {
+      // Select
+      newSelectedGraphics.push(graphic)
+      this.addSelectionHighlight(graphic)
+    }
+
+    // Update state
+    this.setState({ selectedGraphics: newSelectedGraphics })
+
+    // Send selection event data back to Streamlit
+    this.props.args.Streamlit.setComponentValue({
+      event: "feature_selected",
+      selectedFeatures: newSelectedGraphics.map(g => ({
+        attributes: g.attributes || {},
+        geometry: g.geometry ? {
+          type: g.geometry.type,
+          coordinates: g.geometry.type === "point" 
+            ? [(g.geometry as any).longitude, (g.geometry as any).latitude]
+            : null
+        } : null
+      })),
+      selectionCount: newSelectedGraphics.length,
+      timestamp: new Date().toISOString()
+    })
+  }
+
+  private addSelectionHighlight = (graphic: Graphic): void => {
+    if (!graphic.symbol) return
+
+    // Create a highlight symbol based on the original
+    const originalSymbol = graphic.symbol as SimpleMarkerSymbol
+    const highlightSymbol = originalSymbol.clone()
+    
+    // Make it larger and add a bright outline
+    highlightSymbol.size = (originalSymbol.size || 8) + 4
+    highlightSymbol.outline = {
+      color: [255, 255, 0, 1], // Yellow outline
+      width: 3
+    } as any
+
+    // Store original symbol for restoration
+    (graphic as any).__originalSymbol = originalSymbol
+    graphic.symbol = highlightSymbol
+  }
+
+  private removeSelectionHighlight = (graphic: Graphic): void => {
+    // Restore original symbol
+    const originalSymbol = (graphic as any).__originalSymbol
+    if (originalSymbol) {
+      graphic.symbol = originalSymbol
+      delete (graphic as any).__originalSymbol
+    }
+  }
+
   private initializeMap = async (): Promise<void> => {
     if (!this.mapRef.current) {
       this.setState({ error: "Map container not found" })
@@ -277,6 +473,9 @@ class GeomapComponent extends StreamlitComponentBase<State> {
 
       // Wait for the view to load
       await this.mapView.when()
+
+      // Add interactive event handlers
+      this.addEventHandlers()
 
       // Process GeoJSON data if provided
       if (geojson && geojson.features && geojson.features.length > 0) {
