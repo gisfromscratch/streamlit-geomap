@@ -7,8 +7,10 @@ import MapView from "@arcgis/core/views/MapView"
 import Map from "@arcgis/core/Map"
 import Graphic from "@arcgis/core/Graphic"
 import GraphicsLayer from "@arcgis/core/layers/GraphicsLayer"
+import FeatureLayer from "@arcgis/core/layers/FeatureLayer"
 import Point from "@arcgis/core/geometry/Point"
 import SimpleMarkerSymbol from "@arcgis/core/symbols/SimpleMarkerSymbol"
+import esriConfig from "@arcgis/core/config"
 
 interface State {
   mapLoaded?: boolean
@@ -31,6 +33,18 @@ interface GeoJSONFeatureCollection {
   features: GeoJSONFeature[]
 }
 
+// Interface for FeatureLayer configuration
+interface FeatureLayerConfig {
+  url?: string
+  portal_item_id?: string
+  api_key?: string
+  oauth_token?: string
+  renderer?: any
+  label_info?: any
+  title?: string
+  visible?: boolean
+}
+
 /**
  * Streamlit Geomap Component
  * 
@@ -41,6 +55,7 @@ class GeomapComponent extends StreamlitComponentBase<State> {
   private mapRef = React.createRef<HTMLDivElement>()
   private mapView: MapView | null = null
   private graphicsLayer: GraphicsLayer | null = null
+  private featureLayers: FeatureLayer[] = []
 
   public state: State = {
     mapLoaded: false,
@@ -107,6 +122,7 @@ class GeomapComponent extends StreamlitComponentBase<State> {
   public componentDidUpdate = (): void => {
     // Update graphics if GeoJSON data has changed
     const currentGeoJSON = this.props.args.geojson
+    const currentFeatureLayers = this.props.args.feature_layers as FeatureLayerConfig[]
     
     if (this.mapView && this.graphicsLayer) {
       // Clear existing graphics
@@ -122,6 +138,25 @@ class GeomapComponent extends StreamlitComponentBase<State> {
           this.mapView.goTo(graphics)
         }
       }
+      
+      // Handle feature layer updates
+      if (currentFeatureLayers && Array.isArray(currentFeatureLayers) && this.mapView && this.mapView.map) {
+        // Remove existing feature layers
+        this.featureLayers.forEach(layer => {
+          if (this.mapView && this.mapView.map) {
+            this.mapView.map.remove(layer)
+          }
+          layer.destroy()
+        })
+        
+        // Create and add new feature layers
+        this.featureLayers = this.createFeatureLayers(currentFeatureLayers)
+        this.featureLayers.forEach(layer => {
+          if (this.mapView && this.mapView.map) {
+            this.mapView.map.add(layer)
+          }
+        })
+      }
     }
   }
 
@@ -134,6 +169,72 @@ class GeomapComponent extends StreamlitComponentBase<State> {
     if (this.graphicsLayer) {
       this.graphicsLayer = null
     }
+    // Clean up feature layers
+    this.featureLayers.forEach(layer => {
+      layer.destroy()
+    })
+    this.featureLayers = []
+  }
+
+  private createFeatureLayers = (configs: FeatureLayerConfig[]): FeatureLayer[] => {
+    const layers: FeatureLayer[] = []
+    
+    configs.forEach(config => {
+      try {
+        // Handle authentication
+        if (config.api_key) {
+          esriConfig.apiKey = config.api_key
+        }
+        
+        // Create FeatureLayer configuration
+        const layerConfig: any = {}
+        
+        if (config.url) {
+          layerConfig.url = config.url
+        } else if (config.portal_item_id) {
+          layerConfig.portalItem = {
+            id: config.portal_item_id
+          }
+        } else {
+          console.warn("FeatureLayer config must include either 'url' or 'portal_item_id'")
+          return
+        }
+        
+        // Add optional properties
+        if (config.title) {
+          layerConfig.title = config.title
+        }
+        
+        if (config.visible !== undefined) {
+          layerConfig.visible = config.visible
+        }
+        
+        if (config.renderer) {
+          layerConfig.renderer = config.renderer
+        }
+        
+        if (config.label_info) {
+          layerConfig.labelingInfo = config.label_info
+        }
+        
+        // Handle OAuth token if provided
+        if (config.oauth_token) {
+          // Note: OAuth token handling would typically be done at the esriConfig level
+          // or through IdentityManager, but for simplicity we'll set it as a custom request header
+          layerConfig.customParameters = {
+            token: config.oauth_token
+          }
+        }
+        
+        const featureLayer = new FeatureLayer(layerConfig)
+        layers.push(featureLayer)
+        
+      } catch (error) {
+        console.error("Error creating FeatureLayer:", error, config)
+      }
+    })
+    
+    return layers
   }
 
   private initializeMap = async (): Promise<void> => {
@@ -146,10 +247,17 @@ class GeomapComponent extends StreamlitComponentBase<State> {
       // Create a graphics layer for GeoJSON features
       this.graphicsLayer = new GraphicsLayer()
 
+      // Create FeatureLayers if provided
+      const featureLayerConfigs = this.props.args.feature_layers as FeatureLayerConfig[]
+      if (featureLayerConfigs && Array.isArray(featureLayerConfigs)) {
+        this.featureLayers = this.createFeatureLayers(featureLayerConfigs)
+      }
+
       // Create a Map instance with a basemap
+      const allLayers = [this.graphicsLayer, ...this.featureLayers]
       const map = new Map({
         basemap: "topo-vector", // Topographic basemap
-        layers: [this.graphicsLayer]
+        layers: allLayers
       })
 
       // Get GeoJSON data from props
@@ -190,6 +298,7 @@ class GeomapComponent extends StreamlitComponentBase<State> {
         center: [this.mapView.center.longitude, this.mapView.center.latitude],
         zoom: this.mapView.zoom,
         featuresRendered: geojson?.features?.length || 0,
+        featureLayersLoaded: this.featureLayers.length,
         timestamp: new Date().toISOString()
       })
 
