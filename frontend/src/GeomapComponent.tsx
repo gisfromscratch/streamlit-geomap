@@ -123,8 +123,8 @@ class GeomapComponent extends StreamlitComponentBase<State> {
   }
 
   public componentDidMount = (): void => {
-    // Initialize the map when component mounts
-    this.initializeMap()
+    // Initialize the map when component mounts, but check if Streamlit is ready first
+    this.initializeMapSafely()
   }
 
   public componentDidUpdate = (): void => {
@@ -169,24 +169,57 @@ class GeomapComponent extends StreamlitComponentBase<State> {
   }
 
   public componentWillUnmount = (): void => {
-    // Clean up the map view when component unmounts
-    if (this.mapView) {
-      this.mapView.destroy()
-      this.mapView = null
-    }
-    if (this.graphicsLayer) {
-      this.graphicsLayer = null
-    }
-    // Clean up feature layers
-    this.featureLayers.forEach(layer => {
-      layer.destroy()
-    })
-    this.featureLayers = []
-    
-    // Clean up hover throttle timeout
-    if (this.hoverThrottleTimeout) {
-      clearTimeout(this.hoverThrottleTimeout)
-      this.hoverThrottleTimeout = null
+    // Clean up resources to prevent memory leaks and DOM issues
+    this.cleanup()
+  }
+
+  private cleanup = (): void => {
+    try {
+      // Clear any pending timeouts
+      if (this.hoverThrottleTimeout) {
+        clearTimeout(this.hoverThrottleTimeout)
+        this.hoverThrottleTimeout = null
+      }
+
+      // Clean up feature layers first
+      this.featureLayers.forEach(layer => {
+        try {
+          if (this.mapView && this.mapView.map) {
+            this.mapView.map.remove(layer)
+          }
+          layer.destroy()
+        } catch (error) {
+          console.error("Error cleaning up feature layer:", error)
+        }
+      })
+      this.featureLayers = []
+
+      // Clean up graphics layer
+      if (this.graphicsLayer) {
+        try {
+          this.graphicsLayer.removeAll()
+        } catch (error) {
+          console.error("Error cleaning up graphics layer:", error)
+        }
+        this.graphicsLayer = null
+      }
+
+      // Destroy the map view
+      if (this.mapView) {
+        try {
+          this.mapView.destroy()
+        } catch (error) {
+          console.error("Error destroying map view:", error)
+        }
+        this.mapView = null
+      }
+
+      // Clear hover state
+      this.lastHoveredFeature = null
+
+      console.log("Map component cleaned up successfully")
+    } catch (error) {
+      console.error("Error during map cleanup:", error)
     }
   }
 
@@ -336,14 +369,16 @@ class GeomapComponent extends StreamlitComponentBase<State> {
       }
 
       // Send click event data back to Streamlit
-      this.props.args.Streamlit.setComponentValue({
-        event: "map_clicked",
-        coordinates: [mapPoint.longitude, mapPoint.latitude],
-        screenPoint: screenPoint,
-        feature: featureData,
-        hasFeature: clickedGraphic !== null,
-        timestamp: new Date().toISOString()
-      })
+      if (this.props.args.Streamlit) {
+        this.props.args.Streamlit.setComponentValue({
+          event: "map_clicked",
+          coordinates: [mapPoint.longitude, mapPoint.latitude],
+          screenPoint: screenPoint,
+          feature: featureData,
+          hasFeature: clickedGraphic !== null,
+          timestamp: new Date().toISOString()
+        })
+      }
 
     } catch (error) {
       console.error("Error handling map click:", error)
@@ -403,7 +438,7 @@ class GeomapComponent extends StreamlitComponentBase<State> {
           
           // Check if hover events are enabled
           const enableHover = this.props.args.enable_hover !== false
-          if (enableHover) {
+          if (enableHover && this.props.args.Streamlit) {
             this.props.args.Streamlit.setComponentValue({
               event: "feature_hovered",
               feature: hoveredFeature,
@@ -448,20 +483,22 @@ class GeomapComponent extends StreamlitComponentBase<State> {
     this.setState({ selectedGraphics: newSelectedGraphics })
 
     // Send selection event data back to Streamlit
-    this.props.args.Streamlit.setComponentValue({
-      event: "feature_selected",
-      selectedFeatures: newSelectedGraphics.map(g => ({
-        attributes: g.attributes || {},
-        geometry: g.geometry ? {
-          type: g.geometry.type,
-          coordinates: g.geometry.type === "point" 
-            ? [(g.geometry as any).longitude, (g.geometry as any).latitude]
-            : null
-        } : null
-      })),
-      selectionCount: newSelectedGraphics.length,
-      timestamp: new Date().toISOString()
-    })
+    if (this.props.args.Streamlit) {
+      this.props.args.Streamlit.setComponentValue({
+        event: "feature_selected",
+        selectedFeatures: newSelectedGraphics.map(g => ({
+          attributes: g.attributes || {},
+          geometry: g.geometry ? {
+            type: g.geometry.type,
+            coordinates: g.geometry.type === "point" 
+              ? [(g.geometry as any).longitude, (g.geometry as any).latitude]
+              : null
+          } : null
+        })),
+        selectionCount: newSelectedGraphics.length,
+        timestamp: new Date().toISOString()
+      })
+    }
   }
 
   private addSelectionHighlight = (graphic: Graphic): void => {
@@ -490,6 +527,27 @@ class GeomapComponent extends StreamlitComponentBase<State> {
       graphic.symbol = originalSymbol
       delete (graphic as any).__originalSymbol
     }
+  }
+
+  private initializeMapSafely = (retries: number = 0): void => {
+    const maxRetries = 50 // Maximum 5 seconds of retries (50 * 100ms)
+    
+    // Check if Streamlit connection is ready
+    if (!this.props.args || !this.props.args.Streamlit) {
+      if (retries < maxRetries) {
+        console.log(`Streamlit connection not ready, retrying in 100ms... (${retries + 1}/${maxRetries})`)
+        setTimeout(() => this.initializeMapSafely(retries + 1), 100)
+        return
+      } else {
+        // Max retries reached, show error
+        console.error("Streamlit connection failed after maximum retries")
+        this.setState({ error: "Failed to connect to Streamlit. Please refresh the page." })
+        return
+      }
+    }
+    
+    // Streamlit is ready, proceed with map initialization
+    this.initializeMap()
   }
 
   private initializeMap = async (): Promise<void> => {
@@ -562,15 +620,17 @@ class GeomapComponent extends StreamlitComponentBase<State> {
       this.setState({ mapLoaded: true })
       
       // Set component value to indicate successful initialization
-      this.props.args.Streamlit.setComponentValue({
-        status: "map_loaded",
-        basemap: basemap,
-        center: [this.mapView.center.longitude, this.mapView.center.latitude],
-        zoom: this.mapView.zoom,
-        featuresRendered: geojson?.features?.length || 0,
-        featureLayersLoaded: this.featureLayers.length,
-        timestamp: new Date().toISOString()
-      })
+      if (this.props.args.Streamlit) {
+        this.props.args.Streamlit.setComponentValue({
+          status: "map_loaded",
+          basemap: basemap,
+          center: [this.mapView.center.longitude, this.mapView.center.latitude],
+          zoom: this.mapView.zoom,
+          featuresRendered: geojson?.features?.length || 0,
+          featureLayersLoaded: this.featureLayers.length,
+          timestamp: new Date().toISOString()
+        })
+      }
 
       console.log("ArcGIS map initialized successfully")
     } catch (error) {
@@ -580,11 +640,13 @@ class GeomapComponent extends StreamlitComponentBase<State> {
       })
       
       // Set component value to indicate error
-      this.props.args.Streamlit.setComponentValue({
-        status: "error",
-        error: error instanceof Error ? error.message : 'Unknown error',
-        timestamp: new Date().toISOString()
-      })
+      if (this.props.args.Streamlit) {
+        this.props.args.Streamlit.setComponentValue({
+          status: "error",
+          error: error instanceof Error ? error.message : 'Unknown error',
+          timestamp: new Date().toISOString()
+        })
+      }
     }
   }
 
