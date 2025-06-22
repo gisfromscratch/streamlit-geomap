@@ -1,7 +1,8 @@
 import React from "react"
 import { 
   withStreamlitConnection, 
-  StreamlitComponentBase 
+  StreamlitComponentBase,
+  Streamlit
 } from "streamlit-component-lib"
 import MapView from "@arcgis/core/views/MapView"
 import Map from "@arcgis/core/Map"
@@ -123,6 +124,9 @@ class GeomapComponent extends StreamlitComponentBase<State> {
   }
 
   public componentDidMount = (): void => {
+    // Signal to Streamlit that the component is ready
+    Streamlit.setComponentReady()
+    
     // Initialize the map when component mounts, but check if Streamlit is ready first
     this.initializeMapSafely()
   }
@@ -369,8 +373,7 @@ class GeomapComponent extends StreamlitComponentBase<State> {
       }
 
       // Send click event data back to Streamlit
-      if (this.props.args.Streamlit) {
-        this.props.args.Streamlit.setComponentValue({
+      Streamlit.setComponentValue({
           event: "map_clicked",
           coordinates: [mapPoint.longitude, mapPoint.latitude],
           screenPoint: screenPoint,
@@ -378,7 +381,6 @@ class GeomapComponent extends StreamlitComponentBase<State> {
           hasFeature: clickedGraphic !== null,
           timestamp: new Date().toISOString()
         })
-      }
 
     } catch (error) {
       console.error("Error handling map click:", error)
@@ -438,8 +440,8 @@ class GeomapComponent extends StreamlitComponentBase<State> {
           
           // Check if hover events are enabled
           const enableHover = this.props.args.enable_hover !== false
-          if (enableHover && this.props.args.Streamlit) {
-            this.props.args.Streamlit.setComponentValue({
+          if (enableHover) {
+            Streamlit.setComponentValue({
               event: "feature_hovered",
               feature: hoveredFeature,
               timestamp: new Date().toISOString()
@@ -483,22 +485,20 @@ class GeomapComponent extends StreamlitComponentBase<State> {
     this.setState({ selectedGraphics: newSelectedGraphics })
 
     // Send selection event data back to Streamlit
-    if (this.props.args.Streamlit) {
-      this.props.args.Streamlit.setComponentValue({
-        event: "feature_selected",
-        selectedFeatures: newSelectedGraphics.map(g => ({
-          attributes: g.attributes || {},
-          geometry: g.geometry ? {
-            type: g.geometry.type,
-            coordinates: g.geometry.type === "point" 
-              ? [(g.geometry as any).longitude, (g.geometry as any).latitude]
-              : null
-          } : null
-        })),
-        selectionCount: newSelectedGraphics.length,
-        timestamp: new Date().toISOString()
-      })
-    }
+    Streamlit.setComponentValue({
+      event: "feature_selected",
+      selectedFeatures: newSelectedGraphics.map(g => ({
+        attributes: g.attributes || {},
+        geometry: g.geometry ? {
+          type: g.geometry.type,
+          coordinates: g.geometry.type === "point" 
+            ? [(g.geometry as any).longitude, (g.geometry as any).latitude]
+            : null
+        } : null
+      })),
+      selectionCount: newSelectedGraphics.length,
+      timestamp: new Date().toISOString()
+    })
   }
 
   private addSelectionHighlight = (graphic: Graphic): void => {
@@ -532,10 +532,10 @@ class GeomapComponent extends StreamlitComponentBase<State> {
   private initializeMapSafely = (retries: number = 0): void => {
     const maxRetries = 50 // Maximum 5 seconds of retries (50 * 100ms)
     
-    // Check if Streamlit connection is ready
-    if (!this.props.args || !this.props.args.Streamlit) {
+    // Check if component args are ready (data from Python side)
+    if (!this.props.args) {
       if (retries < maxRetries) {
-        console.log(`Streamlit connection not ready, retrying in 100ms... (${retries + 1}/${maxRetries})`)
+        console.log(`Streamlit args not ready, retrying in 100ms... (${retries + 1}/${maxRetries})`)
         setTimeout(() => this.initializeMapSafely(retries + 1), 100)
         return
       } else {
@@ -620,17 +620,15 @@ class GeomapComponent extends StreamlitComponentBase<State> {
       this.setState({ mapLoaded: true })
       
       // Set component value to indicate successful initialization
-      if (this.props.args.Streamlit) {
-        this.props.args.Streamlit.setComponentValue({
-          status: "map_loaded",
-          basemap: basemap,
-          center: [this.mapView.center.longitude, this.mapView.center.latitude],
-          zoom: this.mapView.zoom,
-          featuresRendered: geojson?.features?.length || 0,
-          featureLayersLoaded: this.featureLayers.length,
-          timestamp: new Date().toISOString()
-        })
-      }
+      Streamlit.setComponentValue({
+        event: "map_loaded",
+        basemap: basemap,
+        center: [this.mapView.center.longitude, this.mapView.center.latitude],
+        zoom: this.mapView.zoom,
+        featuresRendered: geojson?.features?.length || 0,
+        featureLayersLoaded: this.featureLayers.length,
+        timestamp: new Date().toISOString()
+      })
 
       console.log("ArcGIS map initialized successfully")
     } catch (error) {
@@ -640,13 +638,11 @@ class GeomapComponent extends StreamlitComponentBase<State> {
       })
       
       // Set component value to indicate error
-      if (this.props.args.Streamlit) {
-        this.props.args.Streamlit.setComponentValue({
-          status: "error",
-          error: error instanceof Error ? error.message : 'Unknown error',
-          timestamp: new Date().toISOString()
-        })
-      }
+      Streamlit.setComponentValue({
+        event: "error",
+        error: error instanceof Error ? error.message : 'Unknown error',
+        timestamp: new Date().toISOString()
+      })
     }
   }
 
