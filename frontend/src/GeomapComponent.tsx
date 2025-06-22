@@ -52,6 +52,10 @@ interface FeatureLayerConfig {
  * 
  * A custom Streamlit component for rendering interactive geospatial maps
  * using the ArcGIS Maps SDK for JavaScript.
+ * 
+ * IMPORTANT: This component calls Streamlit.setFrameHeight() to ensure
+ * the iframe has the correct height. Without this, the iframe defaults
+ * to height=0 and the component is invisible. This fixes issue #33.
  */
 class GeomapComponent extends StreamlitComponentBase<State> {
   private mapRef = React.createRef<HTMLDivElement>()
