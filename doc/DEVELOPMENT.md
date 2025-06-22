@@ -56,7 +56,7 @@ npm run build
 
 Run the setup validation tests:
 ```bash
-python test_setup.py
+python tests/test_setup.py
 ```
 
 ## Project Structure
