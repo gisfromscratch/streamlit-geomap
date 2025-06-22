@@ -26,7 +26,7 @@ st.header("Test 1: Basic Map Component")
 
 if st.button("Create Basic Map"):
     with st.container():
-        gm_result = gm.geomap(
+        gm_result = gm.st_geomap(
             center=[-118.244, 34.052],
             zoom=10,
             basemap="streets-vector",
@@ -42,7 +42,7 @@ col1, col2 = st.columns(2)
 
 with col1:
     if st.button("Create Map #1"):
-        gm_result_1 = gm.geomap(
+        gm_result_1 = gm.st_geomap(
             center=[-74.006, 40.712],  # NYC
             zoom=12,
             basemap="topo-vector",
@@ -52,7 +52,7 @@ with col1:
 
 with col2:
     if st.button("Create Map #2"):
-        gm_result_2 = gm.geomap(
+        gm_result_2 = gm.st_geomap(
             center=[-122.419, 37.775],  # SF
             zoom=11,
             basemap="satellite",
@@ -92,7 +92,7 @@ sample_geojson = {
 }
 
 if st.button("Create Map with Data"):
-    gm_result_data = gm.geomap(
+    gm_result_data = gm.st_geomap(
         center=[-118.244, 34.052],
         zoom=10,
         basemap="streets-vector",
@@ -120,7 +120,7 @@ zoom_level = st.slider(
 )
 
 # This will cause the component to re-render when values change
-gm_result_dynamic = gm.geomap(
+gm_result_dynamic = gm.st_geomap(
     center=[-118.244, 34.052],
     zoom=zoom_level,
     basemap=map_type,
