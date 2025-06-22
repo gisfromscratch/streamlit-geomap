@@ -69,7 +69,10 @@ class GeomapComponent extends StreamlitComponentBase<State> {
   private lastHeight: string | undefined = undefined
 
   public state: State = {
-    mapLoaded: false,
+    mapLoaded: true, // This is a quick fix, because whenever we modify the state during initialization, it causes a re-render
+    // we need to set it to true so that the component does not show the loading state
+    // since then we receive comonent errors because the re-render does some removeChild calls!
+    // we need a singleton approach to avoid this
     error: undefined,
     selectedGraphics: []
   }
@@ -139,6 +142,7 @@ class GeomapComponent extends StreamlitComponentBase<State> {
     // TODO: The following two methods cause removeChild errors in the console
     // they are not necessary for the component to work, so we can comment them out
     // we need to find out what the initialzation for features and layers is causing it!
+    // it seems that updating the state during initialization causes a re-render
     // this.initializeMapSafely()
     // this.initializeMap()
     await this.initializeSimpleMap()
@@ -751,6 +755,8 @@ class GeomapComponent extends StreamlitComponentBase<State> {
     })
   }
 
+  // TODO: Calls initializeMap which causes state updates during initialization, which leads to removeChild errors
+  // This method is kept for reference but should not be used in production
   private initializeMapSafely = (retries: number = 0): void => {
     const maxRetries = 50 // Maximum 5 seconds of retries (50 * 100ms)
     
@@ -810,6 +816,11 @@ class GeomapComponent extends StreamlitComponentBase<State> {
       // Wait for the view to load
       await this.mapView.when()
 
+      // Map is now initialized, define state to indicate readiness
+      // setState would trigger a component re-render
+      // we need to avoid that during initialization
+      //this.state.mapLoaded = true
+
       // Set component value to indicate successful initialization
       Streamlit.setComponentValue({
         event: "map_loaded",
@@ -823,6 +834,8 @@ class GeomapComponent extends StreamlitComponentBase<State> {
       })
   }
 
+  // TODO: Causes state updates during initialization, which leads to removeChild errors
+  // This method is kept for reference but should not be used in production
   private initializeMap = async (): Promise<void> => {
     // Check if component has been unmounted
     if (this.isUnmounted) {

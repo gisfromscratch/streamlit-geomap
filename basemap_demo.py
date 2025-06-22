@@ -8,8 +8,8 @@ import streamlit as st
 import sys
 import os
 
-# Add the package path  
-sys.path.insert(0, '/home/runner/work/streamlit-geomap/streamlit-geomap')
+# Add the package path
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from streamlit_geomap import st_geomap
 
