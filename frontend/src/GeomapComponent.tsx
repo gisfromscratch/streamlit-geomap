@@ -188,6 +188,8 @@ class GeomapComponent extends StreamlitComponentBase<State> {
 
   private cleanup = (): void => {
     try {
+      console.log("🧹 Starting map component cleanup...")
+
       // Clear any pending timeouts
       if (this.hoverThrottleTimeout) {
         clearTimeout(this.hoverThrottleTimeout)
@@ -216,9 +218,17 @@ class GeomapComponent extends StreamlitComponentBase<State> {
       // Clean up graphics layer
       if (this.graphicsLayer) {
         try {
-          // Check if graphics layer still exists and has removeAll method
+          // Remove graphics layer from map first if it's attached
+          if (this.mapView && this.mapView.map && this.mapView.map.layers.includes(this.graphicsLayer)) {
+            this.mapView.map.remove(this.graphicsLayer)
+          }
+          // Clear all graphics
           if (typeof this.graphicsLayer.removeAll === 'function') {
             this.graphicsLayer.removeAll()
+          }
+          // Destroy the graphics layer if it has a destroy method
+          if (typeof this.graphicsLayer.destroy === 'function') {
+            this.graphicsLayer.destroy()
           }
         } catch (error) {
           console.error("Error cleaning up graphics layer:", error)
@@ -226,10 +236,10 @@ class GeomapComponent extends StreamlitComponentBase<State> {
         this.graphicsLayer = null
       }
 
-      // Destroy the map view
+      // Destroy the map view - this is critical for DOM cleanup
       if (this.mapView) {
         try {
-          // Check if mapView still exists and has destroy method
+          // Destroy the map view - this should clean up all DOM nodes and event listeners
           if (typeof this.mapView.destroy === 'function') {
             this.mapView.destroy()
           }
@@ -239,12 +249,22 @@ class GeomapComponent extends StreamlitComponentBase<State> {
         this.mapView = null
       }
 
+      // Clear the DOM container to ensure no stale references remain
+      if (this.mapRef.current) {
+        try {
+          // Clear the container content to prevent DOM conflicts
+          this.mapRef.current.innerHTML = ''
+        } catch (error) {
+          console.error("Error clearing map container:", error)
+        }
+      }
+
       // Clear hover state
       this.lastHoveredFeature = null
 
-      console.log("Map component cleaned up successfully")
+      console.log("✅ Map component cleaned up successfully")
     } catch (error) {
-      console.error("Error during map cleanup:", error)
+      console.error("❌ Error during map cleanup:", error)
     }
   }
 
@@ -590,11 +610,21 @@ class GeomapComponent extends StreamlitComponentBase<State> {
     }
     
     if (!this.mapRef.current) {
+      console.error("🚨 Map container not found during initialization")
       this.setState({ error: "Map container not found" })
       return
     }
 
+    // Additional safety check: ensure the container is properly attached to the DOM
+    if (!this.mapRef.current.isConnected) {
+      console.error("🚨 Map container is not connected to the DOM")
+      this.setState({ error: "Map container is not attached to DOM" })
+      return
+    }
+
     try {
+      console.log("🗺️ Starting map initialization...")
+
       // Create a graphics layer for GeoJSON features
       this.graphicsLayer = new GraphicsLayer()
 
@@ -620,6 +650,12 @@ class GeomapComponent extends StreamlitComponentBase<State> {
       
       this.featureLayers = allFeatureLayers
 
+      // Check again if component was unmounted during layer creation
+      if (this.isUnmounted) {
+        console.log("🗺️ Component unmounted during layer creation, aborting initialization")
+        return
+      }
+
       // Create a Map instance with configurable basemap
       const allLayers = [this.graphicsLayer, ...this.featureLayers]
       const map = new Map({
@@ -629,6 +665,12 @@ class GeomapComponent extends StreamlitComponentBase<State> {
 
       // Get GeoJSON data from props
       const geojson = this.props.args.geojson as GeoJSONFeatureCollection
+
+      // Final check before creating MapView
+      if (this.isUnmounted || !this.mapRef.current || !this.mapRef.current.isConnected) {
+        console.log("🗺️ Component state changed, aborting MapView creation")
+        return
+      }
 
       // Create a MapView instance with configurable properties
       this.mapView = new MapView({
@@ -640,6 +682,13 @@ class GeomapComponent extends StreamlitComponentBase<State> {
 
       // Wait for the view to load
       await this.mapView.when()
+
+      // Check if component was unmounted during async initialization
+      if (this.isUnmounted) {
+        console.log("🗺️ Component unmounted during async initialization, cleaning up")
+        this.cleanup()
+        return
+      }
 
       // Add interactive event handlers
       this.addEventHandlers()
@@ -655,6 +704,12 @@ class GeomapComponent extends StreamlitComponentBase<State> {
         }
       }
       
+      // Final check before setting state
+      if (this.isUnmounted) {
+        console.log("🗺️ Component unmounted before completion, skipping state update")
+        return
+      }
+
       this.setState({ mapLoaded: true })
       
       // Set component value to indicate successful initialization
@@ -668,19 +723,23 @@ class GeomapComponent extends StreamlitComponentBase<State> {
         timestamp: new Date().toISOString()
       })
 
-      console.log("🗺️ ArcGIS map initialized successfully")
+      console.log("✅ ArcGIS map initialized successfully")
     } catch (error) {
-      console.error("Error initializing ArcGIS map:", error)
-      this.setState({ 
-        error: `Failed to initialize map: ${error instanceof Error ? error.message : 'Unknown error'}` 
-      })
+      console.error("❌ Error initializing ArcGIS map:", error)
       
-      // Set component value to indicate error
-      Streamlit.setComponentValue({
-        event: "error",
-        error: error instanceof Error ? error.message : 'Unknown error',
-        timestamp: new Date().toISOString()
-      })
+      // Only update state if component hasn't been unmounted
+      if (!this.isUnmounted) {
+        this.setState({ 
+          error: `Failed to initialize map: ${error instanceof Error ? error.message : 'Unknown error'}` 
+        })
+        
+        // Set component value to indicate error
+        Streamlit.setComponentValue({
+          event: "error",
+          error: error instanceof Error ? error.message : 'Unknown error',
+          timestamp: new Date().toISOString()
+        })
+      }
     }
   }
 

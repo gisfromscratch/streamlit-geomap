@@ -1,0 +1,2 @@
+"use strict";(self.webpackChunkstreamlit_geomap_frontend=self.webpackChunkstreamlit_geomap_frontend||[]).push([[5273],{15273:(e,t,s)=>{s.d(t,{NonSimpleResult:()=>n});class n{assign(e){this.m_reason=e.m_reason,this.m_vertexIndex1=e.m_vertexIndex1,this.m_vertexIndex2=e.m_vertexIndex2}constructor(e,t,s){void 0!==e?(this.m_reason=e,this.m_vertexIndex1=t,this.m_vertexIndex2=s):(this.m_reason=0,this.m_vertexIndex1=-1,this.m_vertexIndex2=-2)}clear(){this.m_reason=0,this.m_vertexIndex1=-1,this.m_vertexIndex2=-1}}}}]);
+//# sourceMappingURL=5273.7e606fcc.chunk.js.map
