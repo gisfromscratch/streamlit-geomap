@@ -62,6 +62,7 @@ class GeomapComponent extends StreamlitComponentBase<State> {
   private hoverThrottleTimeout: NodeJS.Timeout | null = null
   private isUnmounted: boolean = false
   private domObserver: MutationObserver | null = null
+  private lastHeight: string | undefined = undefined
 
   public state: State = {
     mapLoaded: false,
@@ -138,11 +139,22 @@ class GeomapComponent extends StreamlitComponentBase<State> {
     // this.initializeMap()
     await this.initializeSimpleMap()
 
+    // Set the iframe height for Streamlit and track current height
+    this.lastHeight = this.props.args.height || "400px"
+    this.setStreamlitFrameHeight()
+
     // Signal to Streamlit that the component is ready
     Streamlit.setComponentReady()
   }
 
   public componentDidUpdate = (): void => {
+    // Check if height has changed and update frame height
+    const currentHeight = this.props.args.height || "400px"
+    if (this.lastHeight !== currentHeight) {
+      this.lastHeight = currentHeight
+      this.setStreamlitFrameHeight()
+    }
+
     // Update the basemap if it has changed
     const currentBasemap = this.props.args.basemap || "topo-vector"
     if (this.mapView && this.mapView.map && this.mapView.map.basemap !== currentBasemap) {
@@ -219,6 +231,39 @@ class GeomapComponent extends StreamlitComponentBase<State> {
     setTimeout(() => {
       this.cleanup()
     }, 0)
+  }
+
+  /**
+   * Extracts numeric height value from height prop and sets the Streamlit frame height
+   */
+  private setStreamlitFrameHeight = (): void => {
+    const height = this.props.args.height || "400px"
+    const numericHeight = this.extractNumericHeight(height)
+    
+    console.log("🖼️ FRAME HEIGHT: Setting Streamlit frame height to:", numericHeight, "from prop:", height)
+    Streamlit.setFrameHeight(numericHeight)
+  }
+
+  /**
+   * Extracts numeric value from height string (removes 'px' suffix if present)
+   */
+  private extractNumericHeight = (height: string | number): number => {
+    if (typeof height === 'number') {
+      return height
+    }
+    
+    if (typeof height === 'string') {
+      // Remove 'px' suffix if present and convert to number
+      const numericValue = height.endsWith('px') 
+        ? parseInt(height.slice(0, -2), 10) 
+        : parseInt(height, 10)
+      
+      // Return parsed value if valid, otherwise default to 400
+      return !isNaN(numericValue) && numericValue > 0 ? numericValue : 400
+    }
+    
+    // Default fallback
+    return 400
   }
 
   private cleanup = (): void => {
