@@ -11,7 +11,7 @@ from typing import Union, List, Dict, Tuple, Any, Optional
 
 # Create a _RELEASE constant. Set to False while developing the component,
 # True when releasing
-_RELEASE = False
+_RELEASE = True
 
 # Get the absolute path to the frontend's build directory
 if not _RELEASE:
