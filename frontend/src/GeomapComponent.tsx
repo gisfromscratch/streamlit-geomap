@@ -138,13 +138,7 @@ class GeomapComponent extends StreamlitComponentBase<State> {
     // Set up DOM mutation observer to catch unexpected DOM changes
     //this.setupDOMObserver()
 
-    // Initialize the map when component mounts, but check if Streamlit is ready first
-    // TODO: The following two methods cause removeChild errors in the console
-    // they are not necessary for the component to work, so we can comment them out
-    // we need to find out what the initialzation for features and layers is causing it!
-    // it seems that updating the state during initialization causes a re-render
-    // this.initializeMapSafely()
-    // this.initializeMap()
+    // Initialize the map when component mounts
     await this.initializeSimpleMap()
 
     // Set the iframe height for Streamlit and track current height
@@ -755,31 +749,7 @@ class GeomapComponent extends StreamlitComponentBase<State> {
     })
   }
 
-  // TODO: Calls initializeMap which causes state updates during initialization, which leads to removeChild errors
-  // This method is kept for reference but should not be used in production
-  private initializeMapSafely = (retries: number = 0): void => {
-    const maxRetries = 50 // Maximum 5 seconds of retries (50 * 100ms)
-    
-    // Check if component has been unmounted
-    if (this.isUnmounted) {
-      return
-    }
-    
-    // Check if component args are ready (data from Python side)
-    if (!this.props.args) {
-      if (retries < maxRetries) {
-        setTimeout(() => this.initializeMapSafely(retries + 1), 100)
-        return
-      } else {
-        // Max retries reached, show error
-        this.setState({ error: "Failed to connect to Streamlit. Please refresh the page and check the console for troubleshooting tips." })
-        return
-      }
-    }
-    
-    // Streamlit is ready, proceed with map initialization
-    this.initializeMap()
-  }
+
 
   /**
    * Initializes a simple map using the configuration provided via component props.
@@ -834,135 +804,6 @@ class GeomapComponent extends StreamlitComponentBase<State> {
       })
   }
 
-  // TODO: Causes state updates during initialization, which leads to removeChild errors
-  // This method is kept for reference but should not be used in production
-  private initializeMap = async (): Promise<void> => {
-    // Check if component has been unmounted
-    if (this.isUnmounted) {
-      return
-    }
-    
-    if (!this.mapRef.current) {
-      this.setState({ error: "Map container not found" })
-      return
-    }
-
-    // Additional safety check: ensure the container is properly attached to the DOM
-    if (!this.mapRef.current.isConnected) {
-      this.setState({ error: "Map container is not attached to DOM" })
-      return
-    }
-
-    try {
-      // Create a graphics layer for GeoJSON features
-      this.graphicsLayer = new GraphicsLayer()
-
-      // Get configuration from props
-      const basemap = this.props.args.basemap || "topo-vector"
-      const center = this.props.args.center || [-118.244, 34.052] // Default: Los Angeles coordinates
-      const zoom = this.props.args.zoom || 12
-      
-      // Handle layers - support both new 'layers' and legacy 'feature_layers' 
-      let allFeatureLayers: FeatureLayer[] = []
-      
-      // New layers prop takes precedence      
-      if (this.props.args.layers && Array.isArray(this.props.args.layers)) {
-        const layerConfigs = this.props.args.layers
-        allFeatureLayers = this.createLayersFromConfigs(layerConfigs)
-      } 
-      // Fallback to legacy feature_layers for backward compatibility
-      else if (this.props.args.feature_layers && Array.isArray(this.props.args.feature_layers)) {
-        const featureLayerConfigs = this.props.args.feature_layers as FeatureLayerConfig[]
-        allFeatureLayers = this.createFeatureLayers(featureLayerConfigs)
-      }
-      
-      this.featureLayers = allFeatureLayers
-      
-      // Create a Map instance with configurable basemap
-      const allLayers = [this.graphicsLayer, ...this.featureLayers]
-      const map = new Map({
-        basemap: basemap,
-        layers: allLayers
-      })
-
-      // Get GeoJSON data from props
-      const geojson = this.props.args.geojson as GeoJSONFeatureCollection
-
-      // Final check before creating MapView
-      if (this.isUnmounted || !this.mapRef.current || !this.mapRef.current.isConnected) {
-        return
-      }
-
-      // Additional safety: ensure container has proper dimensions
-      if (this.mapRef.current.offsetWidth === 0 || this.mapRef.current.offsetHeight === 0) {
-        console.warn("🗺️ INIT: Map container has zero dimensions, initialization may fail")
-      }
-
-      // Create a MapView instance with configurable properties
-      this.mapView = new MapView({
-        container: this.mapRef.current,
-        map: map,
-        center: center,
-        zoom: zoom
-      })
-
-      // Wait for the view to load
-      await this.mapView.when()
-
-      // Check if component was unmounted during async initialization
-      if (this.isUnmounted) {
-        this.cleanup()
-        return
-      }
-
-      // Add interactive event handlers
-      this.addEventHandlers()
-
-      // Process GeoJSON data if provided
-      if (geojson && geojson.features && geojson.features.length > 0) {
-        const graphics = this.processGeoJSON(geojson)
-        this.graphicsLayer.addMany(graphics)
-        
-        // Auto-center and zoom to show all features
-        if (graphics.length > 0) {
-          await this.mapView.goTo(graphics)
-        }
-      }
-      
-      // Final check before setting state
-      if (this.isUnmounted) {
-        return
-      }
-
-      this.setState({ mapLoaded: true })
-      
-      // Set component value to indicate successful initialization
-      Streamlit.setComponentValue({
-        event: "map_loaded",
-        basemap: basemap,
-        center: [this.mapView.center.longitude, this.mapView.center.latitude],
-        zoom: this.mapView.zoom,
-        featuresRendered: geojson?.features?.length || 0,
-        featureLayersLoaded: this.featureLayers.length,
-        timestamp: new Date().toISOString()
-      })
-
-    } catch (error) {
-      // Only update state if component hasn't been unmounted
-      if (!this.isUnmounted) {
-        this.setState({ 
-          error: `Failed to initialize map: ${error instanceof Error ? error.message : 'Unknown error'}` 
-        })
-        
-        // Set component value to indicate error
-        Streamlit.setComponentValue({
-          event: "error",
-          error: error instanceof Error ? error.message : 'Unknown error',
-          timestamp: new Date().toISOString()
-        })
-      }
-    }
-  }
 
   private processGeoJSON = (geojson: GeoJSONFeatureCollection): Graphic[] => {
     const graphics: Graphic[] = []

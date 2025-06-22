@@ -36,7 +36,7 @@ try:
     
     print("\n🎉 Component is ready to test!")
     print("The DOM fix has been applied to the React component.")
-    print("To test with Streamlit, run: streamlit run test_dom_fix.py")
+    print("To test with Streamlit, run: streamlit run tests/test_dom_fix.py")
     
 except ImportError as e:
     print(f"❌ Import failed: {e}")

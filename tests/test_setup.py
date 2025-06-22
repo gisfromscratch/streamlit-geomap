@@ -42,7 +42,7 @@ def test_component_structure():
 def test_frontend_build():
     """Test that the frontend build files exist."""
     import os
-    build_path = os.path.join(os.path.dirname(__file__), "frontend", "build")
+    build_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend", "build")
     
     if not os.path.exists(build_path):
         print("❌ Frontend build directory not found")
