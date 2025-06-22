@@ -61,6 +61,7 @@ class GeomapComponent extends StreamlitComponentBase<State> {
   private lastHoveredFeature: any = null
   private hoverThrottleTimeout: NodeJS.Timeout | null = null
   private isUnmounted: boolean = false
+  private domObserver: MutationObserver | null = null
 
   public state: State = {
     mapLoaded: false,
@@ -76,6 +77,7 @@ class GeomapComponent extends StreamlitComponentBase<State> {
     const width = this.props.args.width || "100%"
     
     return (
+      console.log("🗺️ RENDER: Rendering GeomapComponent with height:", height, "and width:", width),
       <div style={{ width: width, height: height }}>
         <div 
           ref={this.mapRef}
@@ -124,16 +126,44 @@ class GeomapComponent extends StreamlitComponentBase<State> {
     )
   }
 
-  public componentDidMount = (): void => {
+  public componentDidMount = async (): Promise<void> => {
+    // Set up DOM mutation observer to catch unexpected DOM changes
+    //this.setupDOMObserver()
+
+    // Initialize the map when component mounts, but check if Streamlit is ready first
+    // TODO: The following two methods cause removeChild errors in the console
+    // they are not necessary for the component to work, so we can comment them out
+    // we need to find out what the initialzation for features and layers is causing it!
+    // this.initializeMapSafely()
+    // this.initializeMap()
+    await this.initializeSimpleMap()
+
     // Signal to Streamlit that the component is ready
     Streamlit.setComponentReady()
-    console.log("🗺️ Streamlit Geomap: Component ready signal sent")
-    
-    // Initialize the map when component mounts, but check if Streamlit is ready first
-    this.initializeMapSafely()
   }
 
   public componentDidUpdate = (): void => {
+    // Update the basemap if it has changed
+    const currentBasemap = this.props.args.basemap || "topo-vector"
+    if (this.mapView && this.mapView.map && this.mapView.map.basemap !== currentBasemap) {
+      this.mapView.map.basemap = currentBasemap
+    }
+
+    // Update center and zoom if they have changed
+    const currentCenter = this.props.args.center || [-118.244, 34.052] // Default: Los Angeles coordinates
+    const currentZoom = this.props.args.zoom || 12
+    if (this.mapView) {
+      if (this.mapView.center.longitude !== currentCenter[0] || this.mapView.center.latitude !== currentCenter[1]) {
+        this.mapView.center = new Point({
+          longitude: currentCenter[0],
+          latitude: currentCenter[1]
+        })
+      }
+      if (this.mapView.zoom !== currentZoom) {
+        this.mapView.zoom = currentZoom
+      }
+    }
+
     // Update graphics if GeoJSON data has changed
     const currentGeoJSON = this.props.args.geojson
     const currentFeatureLayers = this.props.args.feature_layers as FeatureLayerConfig[]
@@ -160,8 +190,9 @@ class GeomapComponent extends StreamlitComponentBase<State> {
       
       // Handle feature layer updates
       if (currentFeatureLayers && Array.isArray(currentFeatureLayers) && this.mapView && this.mapView.map) {
+        
         // Remove existing feature layers
-        this.featureLayers.forEach(layer => {
+        this.featureLayers.forEach((layer, index) => {
           if (this.mapView && this.mapView.map) {
             this.mapView.map.remove(layer)
           }
@@ -170,7 +201,7 @@ class GeomapComponent extends StreamlitComponentBase<State> {
         
         // Create and add new feature layers
         this.featureLayers = this.createFeatureLayers(currentFeatureLayers)
-        this.featureLayers.forEach(layer => {
+        this.featureLayers.forEach((layer, index) => {
           if (this.mapView && this.mapView.map) {
             this.mapView.map.add(layer)
           }
@@ -182,89 +213,140 @@ class GeomapComponent extends StreamlitComponentBase<State> {
   public componentWillUnmount = (): void => {
     // Set unmount flag to prevent further initialization
     this.isUnmounted = true
-    // Clean up resources to prevent memory leaks and DOM issues
-    this.cleanup()
+    
+    // Add a small delay to ensure any pending operations complete
+    // before starting cleanup - this helps prevent race conditions
+    setTimeout(() => {
+      this.cleanup()
+    }, 0)
   }
 
   private cleanup = (): void => {
     try {
-      console.log("🧹 Starting map component cleanup...")
-
       // Clear any pending timeouts
       if (this.hoverThrottleTimeout) {
         clearTimeout(this.hoverThrottleTimeout)
         this.hoverThrottleTimeout = null
       }
 
-      // Clean up feature layers first
-      this.featureLayers.forEach(layer => {
-        try {
-          if (this.mapView && this.mapView.map && layer) {
-            // Check if layer is still in the map before removing
-            if (this.mapView.map.layers.includes(layer)) {
-              this.mapView.map.remove(layer)
-            }
-          }
-          // Safely destroy layer if it exists and has a destroy method
-          if (layer && typeof layer.destroy === 'function') {
-            layer.destroy()
-          }
-        } catch (error) {
-          console.error("Error cleaning up feature layer:", error)
-        }
-      })
-      this.featureLayers = []
+      // Stop DOM observer
+      if (this.domObserver) {
+        this.domObserver.disconnect()
+        this.domObserver = null
+      }
 
-      // Clean up graphics layer
+      // Step 1: Remove event handlers first to prevent further DOM manipulation
+      if (this.mapView && !this.mapView.destroyed) {
+        try {
+          // Remove all event handlers to prevent them from firing during cleanup
+          this.mapView.removeHandles()
+        } catch (error) {
+          // Ignore errors during event handler removal
+        }
+      }
+
+      // Step 2: Clean up graphics layer before destroying MapView
       if (this.graphicsLayer) {
         try {
-          // Remove graphics layer from map first if it's attached
-          if (this.mapView && this.mapView.map && this.mapView.map.layers.includes(this.graphicsLayer)) {
-            this.mapView.map.remove(this.graphicsLayer)
-          }
-          // Clear all graphics
+          // Clear all graphics first
           if (typeof this.graphicsLayer.removeAll === 'function') {
             this.graphicsLayer.removeAll()
+          }
+          // Remove graphics layer from map if it's still attached
+          if (this.mapView && this.mapView.map && !this.mapView.destroyed) {
+            if (this.mapView.map.layers.includes(this.graphicsLayer)) {
+              this.mapView.map.remove(this.graphicsLayer)
+            }
           }
           // Destroy the graphics layer if it has a destroy method
           if (typeof this.graphicsLayer.destroy === 'function') {
             this.graphicsLayer.destroy()
           }
         } catch (error) {
-          console.error("Error cleaning up graphics layer:", error)
+          console.log("⚠️ GRAPHICS LAYER: Error during cleanup:", error)
         }
         this.graphicsLayer = null
       }
 
-      // Destroy the map view - this is critical for DOM cleanup
+      // Step 3: Clean up feature layers before destroying MapView
+      this.featureLayers.forEach((layer, index) => {
+        try {
+          // Remove layer from map first if it's still attached
+          if (this.mapView && this.mapView.map && !this.mapView.destroyed && layer) {
+            if (this.mapView.map.layers.includes(layer)) {
+              this.mapView.map.remove(layer)
+            }
+          }
+          // Destroy layer if it exists and has a destroy method
+          if (layer && typeof layer.destroy === 'function') {
+            layer.destroy()
+          }
+        } catch (error) {
+          console.log(`⚠️ FEATURE LAYER ${index}: Error during cleanup:`, error)
+        }
+      })
+      this.featureLayers = []
+
+      // Step 4: Destroy the MapView BEFORE DOM container cleanup
       if (this.mapView) {
         try {
-          // Destroy the map view - this should clean up all DOM nodes and event listeners
-          if (typeof this.mapView.destroy === 'function') {
+          // Check if the MapView is already destroyed to prevent double-destruction
+          if (!this.mapView.destroyed && typeof this.mapView.destroy === 'function') {
+            // CRITICAL: This must happen while the DOM container still exists
             this.mapView.destroy()
           }
         } catch (error) {
-          console.error("Error destroying map view:", error)
+          // Silently handle MapView destruction errors to prevent DOM exceptions
         }
         this.mapView = null
       }
 
-      // Clear the DOM container to ensure no stale references remain
+      // Step 5: Only clear DOM container if it still exists and is connected
       if (this.mapRef.current) {
         try {
-          // Clear the container content to prevent DOM conflicts
-          this.mapRef.current.innerHTML = ''
+          // Check if the container is still connected to the DOM
+          if (this.mapRef.current.isConnected) {
+            // Use a more gentle approach to clear the container
+            let childIndex = 0
+            while (this.mapRef.current.firstChild) {
+              try {
+                const child = this.mapRef.current.firstChild               
+                if (this.mapRef.current.contains(child)) {
+                  this.mapRef.current.removeChild(child);
+                }
+                
+                childIndex++
+                
+                // Safety break to prevent infinite loops
+                if (childIndex > 100) {
+                  break
+                }
+              } catch (domError) {
+                // If removeChild fails, break the loop to prevent infinite attempts
+                const errorMsg = domError instanceof Error ? domError.message : String(domError)
+                console.log("⚠️ DOM CLEANUP: Child removal error:", errorMsg)
+                console.log("⚠️ DOM CLEANUP: Error type:", domError?.constructor?.name)
+                console.log("⚠️ DOM CLEANUP: Full error object:", domError)
+                console.log("🚨 DOM CLEANUP: Breaking due to removeChild error")
+                break
+              }
+            }
+          }
         } catch (error) {
-          console.error("Error clearing map container:", error)
+          const errorMsg = error instanceof Error ? error.message : String(error)
+          console.log("⚠️ DOM CLEANUP: Container cleanup error:", errorMsg)
+          console.log("⚠️ DOM CLEANUP: Error type:", error?.constructor?.name)
+          console.log("⚠️ DOM CLEANUP: Full error object:", error)
         }
       }
 
       // Clear hover state
       this.lastHoveredFeature = null
-
-      console.log("✅ Map component cleaned up successfully")
     } catch (error) {
-      console.error("❌ Error during map cleanup:", error)
+      // Log the error but don't throw it to prevent React from showing error boundaries
+      console.log("❌ CLEANUP: Cleanup completed with errors:", error)
+      console.log("❌ CLEANUP: Error type:", error?.constructor?.name)
+      console.log("❌ CLEANUP: Full error object:", error)
     }
   }
 
@@ -361,7 +443,9 @@ class GeomapComponent extends StreamlitComponentBase<State> {
   }
 
   private addEventHandlers = (): void => {
-    if (!this.mapView) return
+    if (!this.mapView) {
+      return
+    }
 
     // Handle map click events
     this.mapView.on("click", (event) => {
@@ -370,6 +454,7 @@ class GeomapComponent extends StreamlitComponentBase<State> {
 
     // Handle pointer move for hover effects
     this.mapView.on("pointer-move", (event) => {
+      // Don't log every pointer move as it's too verbose
       this.handlePointerMove(event)
     })
   }
@@ -570,61 +655,143 @@ class GeomapComponent extends StreamlitComponentBase<State> {
     }
   }
 
+  private setupDOMObserver = (): void => {
+    if (!this.mapRef.current) {
+      console.log("⚠️ DOM OBSERVER: Cannot setup observer - mapRef.current is null")
+      return
+    }
+
+    this.domObserver = new MutationObserver((mutations) => {
+      mutations.forEach((mutation) => {
+        if (mutation.type === 'childList') {
+          if (mutation.removedNodes.length > 0) {
+            console.log("🚨 DOM OBSERVER: Child nodes removed from map container!")
+            console.log("🔍 DOM OBSERVER: Removed nodes:", Array.from(mutation.removedNodes).map(node => ({
+              nodeName: node.nodeName,
+              nodeType: node.nodeType,
+              className: (node as any).className || '(no class)',
+              id: (node as any).id || '(no id)',
+              isConnected: node.isConnected,
+              parentNode: !!node.parentNode
+            })))
+            console.log("🔍 DOM OBSERVER: Target:", mutation.target)
+            console.log("🔍 DOM OBSERVER: Stack trace:")
+            console.trace("DOM removal stack trace")
+          }
+          if (mutation.addedNodes.length > 0) {
+            console.log("➕ DOM OBSERVER: Child nodes added to map container")
+            console.log("🔍 DOM OBSERVER: Added nodes:", Array.from(mutation.addedNodes).map(node => ({
+              nodeName: node.nodeName,
+              nodeType: node.nodeType,
+              className: (node as any).className || '(no class)',
+              id: (node as any).id || '(no id)'
+            })))
+          }
+        }
+        if (mutation.type === 'attributes') {
+          console.log("📝 DOM OBSERVER: Attribute change on map container:", mutation.attributeName, mutation.oldValue)
+        }
+      })
+    })
+
+    this.domObserver.observe(this.mapRef.current, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeOldValue: true
+    })
+  }
+
   private initializeMapSafely = (retries: number = 0): void => {
     const maxRetries = 50 // Maximum 5 seconds of retries (50 * 100ms)
     
     // Check if component has been unmounted
     if (this.isUnmounted) {
-      console.log("🗺️ Component unmounted, canceling map initialization")
       return
     }
     
     // Check if component args are ready (data from Python side)
     if (!this.props.args) {
       if (retries < maxRetries) {
-        console.log(`🗺️ Streamlit args not ready, retrying in 100ms... (${retries + 1}/${maxRetries})`)
         setTimeout(() => this.initializeMapSafely(retries + 1), 100)
         return
       } else {
         // Max retries reached, show error
-        console.error("🚨 Streamlit connection failed after maximum retries")
-        console.error("🔧 Troubleshooting tips:")
-        console.error("   - Make sure React dev server is running on port 3001 (in development)")
-        console.error("   - Check that the component build is up to date (run 'npm run build')")
-        console.error("   - Verify Streamlit and component are compatible versions")
         this.setState({ error: "Failed to connect to Streamlit. Please refresh the page and check the console for troubleshooting tips." })
         return
       }
     }
     
-    console.log("🗺️ Streamlit connection ready, initializing map...")
     // Streamlit is ready, proceed with map initialization
     this.initializeMap()
+  }
+
+  /**
+   * Initializes a simple map using the configuration provided via component props.
+   *
+   * - Retrieves the basemap, center coordinates, and zoom level from `this.props.args`.
+   * - Applies default values if any configuration is missing:
+   *   - `basemap`: "topo-vector"
+   *   - `center`: [-118.244, 34.052] (Los Angeles coordinates)
+   *   - `zoom`: 12
+   * - Logs the configuration to the console for debugging.
+   * - Creates a new `Map` instance with the specified basemap.
+   * - Instantiates a `MapView` and attaches it to the referenced container element.
+   *
+   * @private
+   */
+  private initializeSimpleMap = async (): Promise<void> => {
+      // Get configuration from props
+      const basemap = this.props.args.basemap || "topo-vector"
+      const center = this.props.args.center || [-118.244, 34.052] // Default: Los Angeles coordinates
+      const zoom = this.props.args.zoom || 12
+
+      // Create a Map instance with configurable basemap
+      const map = new Map({
+        basemap: basemap
+      })
+
+      this.mapView = new MapView({
+        container: this.mapRef.current,
+        map: map,
+        center: center,
+        zoom: zoom
+      })
+
+      // Wait for the view to load
+      await this.mapView.when()
+
+      // Set component value to indicate successful initialization
+      Streamlit.setComponentValue({
+        event: "map_loaded",
+        basemap: basemap,
+        center: [this.mapView.center.longitude, this.mapView.center.latitude],
+        zoom: this.mapView.zoom,
+        //featuresRendered: geojson?.features?.length || 0,
+        featuresRendered: 0,
+        featureLayersLoaded: this.featureLayers.length,
+        timestamp: new Date().toISOString()
+      })
   }
 
   private initializeMap = async (): Promise<void> => {
     // Check if component has been unmounted
     if (this.isUnmounted) {
-      console.log("🗺️ Component unmounted, canceling map initialization")
       return
     }
     
     if (!this.mapRef.current) {
-      console.error("🚨 Map container not found during initialization")
       this.setState({ error: "Map container not found" })
       return
     }
 
     // Additional safety check: ensure the container is properly attached to the DOM
     if (!this.mapRef.current.isConnected) {
-      console.error("🚨 Map container is not connected to the DOM")
       this.setState({ error: "Map container is not attached to DOM" })
       return
     }
 
     try {
-      console.log("🗺️ Starting map initialization...")
-
       // Create a graphics layer for GeoJSON features
       this.graphicsLayer = new GraphicsLayer()
 
@@ -632,12 +799,11 @@ class GeomapComponent extends StreamlitComponentBase<State> {
       const basemap = this.props.args.basemap || "topo-vector"
       const center = this.props.args.center || [-118.244, 34.052] // Default: Los Angeles coordinates
       const zoom = this.props.args.zoom || 12
-      // Note: viewMode (2d/3d) support would require SceneView for 3D - keeping as 2D for now
       
       // Handle layers - support both new 'layers' and legacy 'feature_layers' 
       let allFeatureLayers: FeatureLayer[] = []
       
-      // New layers prop takes precedence
+      // New layers prop takes precedence      
       if (this.props.args.layers && Array.isArray(this.props.args.layers)) {
         const layerConfigs = this.props.args.layers
         allFeatureLayers = this.createLayersFromConfigs(layerConfigs)
@@ -649,13 +815,7 @@ class GeomapComponent extends StreamlitComponentBase<State> {
       }
       
       this.featureLayers = allFeatureLayers
-
-      // Check again if component was unmounted during layer creation
-      if (this.isUnmounted) {
-        console.log("🗺️ Component unmounted during layer creation, aborting initialization")
-        return
-      }
-
+      
       // Create a Map instance with configurable basemap
       const allLayers = [this.graphicsLayer, ...this.featureLayers]
       const map = new Map({
@@ -668,8 +828,12 @@ class GeomapComponent extends StreamlitComponentBase<State> {
 
       // Final check before creating MapView
       if (this.isUnmounted || !this.mapRef.current || !this.mapRef.current.isConnected) {
-        console.log("🗺️ Component state changed, aborting MapView creation")
         return
+      }
+
+      // Additional safety: ensure container has proper dimensions
+      if (this.mapRef.current.offsetWidth === 0 || this.mapRef.current.offsetHeight === 0) {
+        console.warn("🗺️ INIT: Map container has zero dimensions, initialization may fail")
       }
 
       // Create a MapView instance with configurable properties
@@ -685,7 +849,6 @@ class GeomapComponent extends StreamlitComponentBase<State> {
 
       // Check if component was unmounted during async initialization
       if (this.isUnmounted) {
-        console.log("🗺️ Component unmounted during async initialization, cleaning up")
         this.cleanup()
         return
       }
@@ -706,7 +869,6 @@ class GeomapComponent extends StreamlitComponentBase<State> {
       
       // Final check before setting state
       if (this.isUnmounted) {
-        console.log("🗺️ Component unmounted before completion, skipping state update")
         return
       }
 
@@ -723,10 +885,7 @@ class GeomapComponent extends StreamlitComponentBase<State> {
         timestamp: new Date().toISOString()
       })
 
-      console.log("✅ ArcGIS map initialized successfully")
     } catch (error) {
-      console.error("❌ Error initializing ArcGIS map:", error)
-      
       // Only update state if component hasn't been unmounted
       if (!this.isUnmounted) {
         this.setState({ 
