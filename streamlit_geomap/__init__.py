@@ -330,8 +330,15 @@ def st_geomap(
 
 
 # Add some test code to play with the component while it's in development.
-if not _RELEASE:
+# Only run this when the module is executed directly, not when imported.
+if not _RELEASE and __name__ == "__main__":
     import streamlit as st
+
+    st.set_page_config(
+        page_title="Streamlit Geomap Component Demo",
+        page_icon="🗺️",
+        layout="wide"
+    )
 
     st.subheader("Streamlit Geomap Component Demo")
     
