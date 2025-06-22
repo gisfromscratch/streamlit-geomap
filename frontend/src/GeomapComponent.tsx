@@ -61,6 +61,7 @@ class GeomapComponent extends StreamlitComponentBase<State> {
   private lastHoveredFeature: any = null
   private hoverThrottleTimeout: NodeJS.Timeout | null = null
   private isUnmounted: boolean = false
+  private domObserver: MutationObserver | null = null
 
   public state: State = {
     mapLoaded: false,
@@ -69,11 +70,19 @@ class GeomapComponent extends StreamlitComponentBase<State> {
   }
 
   public render = (): React.ReactNode => {
+    console.log("🔄 REACT LIFECYCLE: render() called")
+    console.log("🔍 RENDER STATE: mapLoaded =", this.state.mapLoaded)
+    console.log("🔍 RENDER STATE: error =", this.state.error)
+    console.log("🔍 RENDER STATE: isUnmounted =", this.isUnmounted)
+    console.log("🔍 RENDER STATE: mapView exists =", !!this.mapView)
+    
     const { mapLoaded, error } = this.state
     
     // Get size props from arguments, with defaults
     const height = this.props.args.height || "400px"
     const width = this.props.args.width || "100%"
+    
+    console.log("🔍 RENDER PROPS: width =", width, "height =", height)
     
     return (
       <div style={{ width: width, height: height }}>
@@ -125,6 +134,14 @@ class GeomapComponent extends StreamlitComponentBase<State> {
   }
 
   public componentDidMount = (): void => {
+    console.log("🔄 REACT LIFECYCLE: componentDidMount() called")
+    console.log("🔍 DOM STATE: mapRef.current exists:", !!this.mapRef.current)
+    console.log("🔍 DOM STATE: mapRef.current.isConnected:", this.mapRef.current?.isConnected)
+    console.log("🔍 DOM STATE: mapRef.current.children.length:", this.mapRef.current?.children.length)
+    
+    // Set up DOM mutation observer to catch unexpected DOM changes
+    this.setupDOMObserver()
+    
     // Signal to Streamlit that the component is ready
     Streamlit.setComponentReady()
     console.log("🗺️ Streamlit Geomap: Component ready signal sent")
@@ -134,21 +151,31 @@ class GeomapComponent extends StreamlitComponentBase<State> {
   }
 
   public componentDidUpdate = (): void => {
+    console.log("🔄 REACT LIFECYCLE: componentDidUpdate() called")
+    console.log("🔍 DOM STATE: mapRef.current exists:", !!this.mapRef.current)
+    console.log("🔍 DOM STATE: mapRef.current.isConnected:", this.mapRef.current?.isConnected)
+    console.log("🔍 DOM STATE: mapRef.current.children.length:", this.mapRef.current?.children.length)
+    console.log("🔍 MAPVIEW STATE: mapView exists:", !!this.mapView)
+    console.log("🔍 MAPVIEW STATE: mapView.destroyed:", this.mapView?.destroyed)
+    
     // Update graphics if GeoJSON data has changed
     const currentGeoJSON = this.props.args.geojson
     const currentFeatureLayers = this.props.args.feature_layers as FeatureLayerConfig[]
     
     if (this.mapView && this.graphicsLayer) {
+      console.log("🔄 GRAPHICS UPDATE: Clearing existing graphics")
       // Clear existing graphics
       this.graphicsLayer.removeAll()
       
       // Add new graphics if GeoJSON is provided
       if (currentGeoJSON && currentGeoJSON.features && currentGeoJSON.features.length > 0) {
+        console.log("🔄 GRAPHICS UPDATE: Adding new graphics from GeoJSON")
         const graphics = this.processGeoJSON(currentGeoJSON as GeoJSONFeatureCollection)
         this.graphicsLayer.addMany(graphics)
         
         // Auto-center and zoom to show all features
         if (graphics.length > 0) {
+          console.log("🔄 GRAPHICS UPDATE: Auto-centering to new graphics")
           // Ensure mapView is ready before calling goTo to avoid "Animation Manager is undefined" error
           this.mapView.when(() => {
             this.mapView?.goTo(graphics).catch((error) => {
@@ -160,145 +187,273 @@ class GeomapComponent extends StreamlitComponentBase<State> {
       
       // Handle feature layer updates
       if (currentFeatureLayers && Array.isArray(currentFeatureLayers) && this.mapView && this.mapView.map) {
+        console.log("🔄 FEATURE LAYERS UPDATE: Updating feature layers")
+        console.log("🔍 BEFORE LAYER CLEANUP: mapView.map.layers.length:", this.mapView.map.layers.length)
+        
         // Remove existing feature layers
-        this.featureLayers.forEach(layer => {
+        this.featureLayers.forEach((layer, index) => {
+          console.log(`🔄 REMOVING LAYER ${index}: layer exists:`, !!layer)
           if (this.mapView && this.mapView.map) {
+            console.log(`🔄 REMOVING LAYER ${index}: layer in map:`, this.mapView.map.layers.includes(layer))
             this.mapView.map.remove(layer)
           }
           layer.destroy()
         })
         
+        console.log("🔍 AFTER LAYER CLEANUP: mapView.map.layers.length:", this.mapView.map.layers.length)
+        
         // Create and add new feature layers
         this.featureLayers = this.createFeatureLayers(currentFeatureLayers)
-        this.featureLayers.forEach(layer => {
+        console.log("🔄 ADDING NEW LAYERS: count:", this.featureLayers.length)
+        this.featureLayers.forEach((layer, index) => {
+          console.log(`🔄 ADDING LAYER ${index}:`, layer)
           if (this.mapView && this.mapView.map) {
             this.mapView.map.add(layer)
           }
         })
+        
+        console.log("🔍 FINAL LAYER STATE: mapView.map.layers.length:", this.mapView.map.layers.length)
       }
     }
   }
 
   public componentWillUnmount = (): void => {
+    console.log("🔄 REACT LIFECYCLE: componentWillUnmount() called")
+    console.log("🔍 UNMOUNT STATE: mapRef.current exists:", !!this.mapRef.current)
+    console.log("🔍 UNMOUNT STATE: mapRef.current.isConnected:", this.mapRef.current?.isConnected)
+    console.log("🔍 UNMOUNT STATE: mapRef.current.children.length:", this.mapRef.current?.children.length)
+    console.log("🔍 UNMOUNT STATE: mapView exists:", !!this.mapView)
+    console.log("🔍 UNMOUNT STATE: mapView.destroyed:", this.mapView?.destroyed)
+    console.log("🔍 UNMOUNT STATE: graphicsLayer exists:", !!this.graphicsLayer)
+    console.log("🔍 UNMOUNT STATE: featureLayers.length:", this.featureLayers.length)
+    
     // Set unmount flag to prevent further initialization
     this.isUnmounted = true
+    console.log("🚩 UNMOUNT FLAG SET: isUnmounted =", this.isUnmounted)
     
     // Add a small delay to ensure any pending operations complete
     // before starting cleanup - this helps prevent race conditions
+    console.log("⏰ SCHEDULING CLEANUP: setTimeout(0) to defer cleanup")
     setTimeout(() => {
+      console.log("⏰ EXECUTING DEFERRED CLEANUP: Starting cleanup sequence")
       this.cleanup()
     }, 0)
+    
+    console.log("🔄 REACT LIFECYCLE: componentWillUnmount() completed")
   }
 
   private cleanup = (): void => {
     try {
-      console.log("🧹 Starting map component cleanup...")
+      console.log("🧹 CLEANUP: Starting comprehensive map component cleanup...")
+      console.log("🔍 CLEANUP STATE CHECK: isUnmounted =", this.isUnmounted)
+      console.log("🔍 CLEANUP STATE CHECK: mapRef.current exists:", !!this.mapRef.current)
+      console.log("🔍 CLEANUP STATE CHECK: mapRef.current.isConnected:", this.mapRef.current?.isConnected)
+      console.log("🔍 CLEANUP STATE CHECK: mapRef.current.children.length:", this.mapRef.current?.children.length)
+      console.log("🔍 CLEANUP STATE CHECK: mapRef.current.innerHTML length:", this.mapRef.current?.innerHTML.length)
+      
+      // Log all children before cleanup
+      if (this.mapRef.current && this.mapRef.current.children.length > 0) {
+        console.log("🔍 CLEANUP DOM CHILDREN BEFORE:")
+        for (let i = 0; i < this.mapRef.current.children.length; i++) {
+          const child = this.mapRef.current.children[i]
+          console.log(`  Child ${i}:`, child.tagName, child.className, child.id, "connected:", child.isConnected)
+        }
+      }
 
       // Clear any pending timeouts
       if (this.hoverThrottleTimeout) {
+        console.log("🧹 CLEANUP: Clearing hover throttle timeout")
         clearTimeout(this.hoverThrottleTimeout)
         this.hoverThrottleTimeout = null
       }
 
+      // Stop DOM observer
+      if (this.domObserver) {
+        console.log("🧹 CLEANUP: Disconnecting DOM observer")
+        this.domObserver.disconnect()
+        this.domObserver = null
+      }
+
       // Step 1: Remove event handlers first to prevent further DOM manipulation
+      console.log("🧹 CLEANUP STEP 1: Removing MapView event handlers")
       if (this.mapView && !this.mapView.destroyed) {
         try {
+          console.log("🔍 MAPVIEW HANDLES: Attempting to remove all event handlers")
           // Remove all event handlers to prevent them from firing during cleanup
           this.mapView.removeHandles()
+          console.log("✅ MAPVIEW HANDLES: Successfully removed all event handlers")
         } catch (error) {
           // Ignore errors during event handler removal
-          console.debug("Event handlers already removed or MapView destroyed")
+          console.log("⚠️ MAPVIEW HANDLES: Error during removal (expected):", error)
         }
+      } else {
+        console.log("⏩ MAPVIEW HANDLES: Skipping - MapView null or already destroyed")
       }
 
       // Step 2: Clean up graphics layer before destroying MapView
+      console.log("🧹 CLEANUP STEP 2: Cleaning up graphics layer")
       if (this.graphicsLayer) {
         try {
+          console.log("🔍 GRAPHICS LAYER: Starting graphics layer cleanup")
           // Clear all graphics first
           if (typeof this.graphicsLayer.removeAll === 'function') {
+            console.log("🔍 GRAPHICS LAYER: Removing all graphics")
             this.graphicsLayer.removeAll()
+            console.log("✅ GRAPHICS LAYER: All graphics removed")
           }
           // Remove graphics layer from map if it's still attached
           if (this.mapView && this.mapView.map && !this.mapView.destroyed) {
             if (this.mapView.map.layers.includes(this.graphicsLayer)) {
+              console.log("🔍 GRAPHICS LAYER: Removing from map")
               this.mapView.map.remove(this.graphicsLayer)
+              console.log("✅ GRAPHICS LAYER: Removed from map")
+            } else {
+              console.log("ℹ️ GRAPHICS LAYER: Not attached to map, skipping removal")
             }
           }
           // Destroy the graphics layer if it has a destroy method
           if (typeof this.graphicsLayer.destroy === 'function') {
+            console.log("🔍 GRAPHICS LAYER: Destroying graphics layer")
             this.graphicsLayer.destroy()
+            console.log("✅ GRAPHICS LAYER: Destroyed successfully")
           }
         } catch (error) {
-          console.debug("Error cleaning up graphics layer:", error)
+          console.log("⚠️ GRAPHICS LAYER: Error during cleanup:", error)
         }
         this.graphicsLayer = null
+        console.log("🔍 GRAPHICS LAYER: Reference cleared")
+      } else {
+        console.log("⏩ GRAPHICS LAYER: Skipping - graphics layer is null")
       }
 
       // Step 3: Clean up feature layers before destroying MapView
-      this.featureLayers.forEach(layer => {
+      console.log("🧹 CLEANUP STEP 3: Cleaning up feature layers")
+      console.log("🔍 FEATURE LAYERS: Count to clean up:", this.featureLayers.length)
+      this.featureLayers.forEach((layer, index) => {
         try {
+          console.log(`🔍 FEATURE LAYER ${index}: Starting cleanup`)
           // Remove layer from map first if it's still attached
           if (this.mapView && this.mapView.map && !this.mapView.destroyed && layer) {
             if (this.mapView.map.layers.includes(layer)) {
+              console.log(`🔍 FEATURE LAYER ${index}: Removing from map`)
               this.mapView.map.remove(layer)
+              console.log(`✅ FEATURE LAYER ${index}: Removed from map`)
+            } else {
+              console.log(`ℹ️ FEATURE LAYER ${index}: Not attached to map`)
             }
           }
           // Destroy layer if it exists and has a destroy method
           if (layer && typeof layer.destroy === 'function') {
+            console.log(`🔍 FEATURE LAYER ${index}: Destroying layer`)
             layer.destroy()
+            console.log(`✅ FEATURE LAYER ${index}: Destroyed successfully`)
           }
         } catch (error) {
-          console.debug("Error cleaning up feature layer:", error)
+          console.log(`⚠️ FEATURE LAYER ${index}: Error during cleanup:`, error)
         }
       })
       this.featureLayers = []
+      console.log("🔍 FEATURE LAYERS: All references cleared")
 
       // Step 4: Destroy the MapView BEFORE DOM container cleanup
+      console.log("🧹 CLEANUP STEP 4: Destroying MapView")
       if (this.mapView) {
         try {
+          console.log("🔍 MAPVIEW DESTROY: Starting MapView destruction")
+          console.log("🔍 MAPVIEW DESTROY: MapView.destroyed before =", this.mapView.destroyed)
+          console.log("🔍 MAPVIEW DESTROY: MapView.container exists =", !!this.mapView.container)
+          console.log("🔍 MAPVIEW DESTROY: MapView.container.isConnected =", this.mapView.container?.isConnected)
+          
           // Check if the MapView is already destroyed to prevent double-destruction
           if (!this.mapView.destroyed && typeof this.mapView.destroy === 'function') {
+            console.log("🔍 MAPVIEW DESTROY: Calling destroy() method")
             // CRITICAL: This must happen while the DOM container still exists
             this.mapView.destroy()
+            console.log("✅ MAPVIEW DESTROY: MapView.destroy() completed")
+            console.log("🔍 MAPVIEW DESTROY: MapView.destroyed after =", this.mapView.destroyed)
+          } else {
+            console.log("⏩ MAPVIEW DESTROY: Skipping - already destroyed or no destroy method")
           }
         } catch (error) {
           // Silently handle MapView destruction errors to prevent DOM exceptions
           const errorMsg = error instanceof Error ? error.message : String(error)
-          console.debug("MapView destruction handled:", errorMsg)
+          console.log("⚠️ MAPVIEW DESTROY: Error during destruction:", errorMsg)
+          console.log("⚠️ MAPVIEW DESTROY: Error type:", error?.constructor?.name)
+          console.log("⚠️ MAPVIEW DESTROY: Full error object:", error)
         }
         this.mapView = null
+        console.log("🔍 MAPVIEW DESTROY: Reference cleared")
+      } else {
+        console.log("⏩ MAPVIEW DESTROY: Skipping - MapView is null")
       }
 
       // Step 5: Only clear DOM container if it still exists and is connected
+      console.log("🧹 CLEANUP STEP 5: Cleaning up DOM container")
       if (this.mapRef.current) {
         try {
+          console.log("🔍 DOM CLEANUP: Starting DOM container cleanup")
+          console.log("🔍 DOM CLEANUP: Container.isConnected =", this.mapRef.current.isConnected)
+          console.log("🔍 DOM CLEANUP: Container.children.length =", this.mapRef.current.children.length)
+          console.log("🔍 DOM CLEANUP: Container.innerHTML.length =", this.mapRef.current.innerHTML.length)
+          
           // Check if the container is still connected to the DOM
           if (this.mapRef.current.isConnected) {
+            console.log("🔍 DOM CLEANUP: Container is connected, proceeding with child removal")
             // Use a more gentle approach to clear the container
+            let childIndex = 0
             while (this.mapRef.current.firstChild) {
               try {
-                this.mapRef.current.removeChild(this.mapRef.current.firstChild)
+                const child = this.mapRef.current.firstChild
+                console.log(`🔍 DOM CLEANUP: Removing child ${childIndex}:`, 
+                  child.nodeName, 
+                  (child as any).className || '(no class)', 
+                  "connected:", child.isConnected,
+                  "parentNode exists:", !!child.parentNode,
+                  "parentNode is mapRef:", child.parentNode === this.mapRef.current)
+                
+                this.mapRef.current.removeChild(child)
+                console.log(`✅ DOM CLEANUP: Successfully removed child ${childIndex}`)
+                childIndex++
+                
+                // Safety break to prevent infinite loops
+                if (childIndex > 100) {
+                  console.log("🚨 DOM CLEANUP: Breaking infinite loop prevention (100+ children)")
+                  break
+                }
               } catch (domError) {
                 // If removeChild fails, break the loop to prevent infinite attempts
                 const errorMsg = domError instanceof Error ? domError.message : String(domError)
-                console.debug("DOM child removal completed or failed:", errorMsg)
+                console.log("⚠️ DOM CLEANUP: Child removal error:", errorMsg)
+                console.log("⚠️ DOM CLEANUP: Error type:", domError?.constructor?.name)
+                console.log("⚠️ DOM CLEANUP: Full error object:", domError)
+                console.log("🚨 DOM CLEANUP: Breaking due to removeChild error")
                 break
               }
             }
+            console.log("🔍 DOM CLEANUP: Final container.children.length =", this.mapRef.current.children.length)
+          } else {
+            console.log("⏩ DOM CLEANUP: Container not connected to DOM, skipping child removal")
           }
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : String(error)
-          console.debug("DOM container cleanup handled:", errorMsg)
+          console.log("⚠️ DOM CLEANUP: Container cleanup error:", errorMsg)
+          console.log("⚠️ DOM CLEANUP: Error type:", error?.constructor?.name)
+          console.log("⚠️ DOM CLEANUP: Full error object:", error)
         }
+      } else {
+        console.log("⏩ DOM CLEANUP: Skipping - mapRef.current is null")
       }
 
       // Clear hover state
+      console.log("🧹 CLEANUP STEP 6: Clearing hover state")
       this.lastHoveredFeature = null
 
-      console.log("✅ Map component cleaned up successfully")
+      console.log("✅ CLEANUP: Map component cleaned up successfully")
     } catch (error) {
       // Log the error but don't throw it to prevent React from showing error boundaries
-      console.debug("❌ Cleanup completed with handled errors:", error)
+      console.log("❌ CLEANUP: Cleanup completed with errors:", error)
+      console.log("❌ CLEANUP: Error type:", error?.constructor?.name)
+      console.log("❌ CLEANUP: Full error object:", error)
     }
   }
 
@@ -395,17 +550,27 @@ class GeomapComponent extends StreamlitComponentBase<State> {
   }
 
   private addEventHandlers = (): void => {
-    if (!this.mapView) return
+    console.log("🎯 EVENT HANDLERS: Starting event handler setup")
+    if (!this.mapView) {
+      console.log("⚠️ EVENT HANDLERS: MapView not available, skipping event handler setup")
+      return
+    }
 
+    console.log("🎯 EVENT HANDLERS: Adding click event handler")
     // Handle map click events
     this.mapView.on("click", (event) => {
+      console.log("🎯 EVENT: Map click event triggered", event)
       this.handleMapClick(event)
     })
 
+    console.log("🎯 EVENT HANDLERS: Adding pointer-move event handler")
     // Handle pointer move for hover effects
     this.mapView.on("pointer-move", (event) => {
+      // Don't log every pointer move as it's too verbose
       this.handlePointerMove(event)
     })
+    
+    console.log("✅ EVENT HANDLERS: All event handlers added successfully")
   }
 
   private handleMapClick = async (event: any): Promise<void> => {
@@ -604,6 +769,55 @@ class GeomapComponent extends StreamlitComponentBase<State> {
     }
   }
 
+  private setupDOMObserver = (): void => {
+    if (!this.mapRef.current) {
+      console.log("⚠️ DOM OBSERVER: Cannot setup observer - mapRef.current is null")
+      return
+    }
+
+    console.log("👁️ DOM OBSERVER: Setting up MutationObserver")
+    this.domObserver = new MutationObserver((mutations) => {
+      mutations.forEach((mutation) => {
+        if (mutation.type === 'childList') {
+          if (mutation.removedNodes.length > 0) {
+            console.log("🚨 DOM OBSERVER: Child nodes removed from map container!")
+            console.log("🔍 DOM OBSERVER: Removed nodes:", Array.from(mutation.removedNodes).map(node => ({
+              nodeName: node.nodeName,
+              nodeType: node.nodeType,
+              className: (node as any).className || '(no class)',
+              id: (node as any).id || '(no id)',
+              isConnected: node.isConnected,
+              parentNode: !!node.parentNode
+            })))
+            console.log("🔍 DOM OBSERVER: Target:", mutation.target)
+            console.log("🔍 DOM OBSERVER: Stack trace:")
+            console.trace("DOM removal stack trace")
+          }
+          if (mutation.addedNodes.length > 0) {
+            console.log("➕ DOM OBSERVER: Child nodes added to map container")
+            console.log("🔍 DOM OBSERVER: Added nodes:", Array.from(mutation.addedNodes).map(node => ({
+              nodeName: node.nodeName,
+              nodeType: node.nodeType,
+              className: (node as any).className || '(no class)',
+              id: (node as any).id || '(no id)'
+            })))
+          }
+        }
+        if (mutation.type === 'attributes') {
+          console.log("📝 DOM OBSERVER: Attribute change on map container:", mutation.attributeName, mutation.oldValue)
+        }
+      })
+    })
+
+    this.domObserver.observe(this.mapRef.current, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeOldValue: true
+    })
+    console.log("✅ DOM OBSERVER: MutationObserver setup complete")
+  }
+
   private initializeMapSafely = (retries: number = 0): void => {
     const maxRetries = 50 // Maximum 5 seconds of retries (50 * 100ms)
     
@@ -637,121 +851,160 @@ class GeomapComponent extends StreamlitComponentBase<State> {
   }
 
   private initializeMap = async (): Promise<void> => {
+    console.log("🗺️ INIT: Starting map initialization...")
+    console.log("🔍 INIT STATE: isUnmounted =", this.isUnmounted)
+    
     // Check if component has been unmounted
     if (this.isUnmounted) {
-      console.log("🗺️ Component unmounted, canceling map initialization")
+      console.log("🚫 INIT: Component unmounted, canceling map initialization")
       return
     }
     
     if (!this.mapRef.current) {
-      console.error("🚨 Map container not found during initialization")
+      console.error("🚨 INIT: Map container not found during initialization")
       this.setState({ error: "Map container not found" })
       return
     }
 
     // Additional safety check: ensure the container is properly attached to the DOM
     if (!this.mapRef.current.isConnected) {
-      console.error("🚨 Map container is not connected to the DOM")
+      console.error("🚨 INIT: Map container is not connected to the DOM")
+      console.log("🔍 INIT DOM: Container exists:", !!this.mapRef.current)
+      console.log("🔍 INIT DOM: Container.parentNode:", this.mapRef.current.parentNode)
+      console.log("🔍 INIT DOM: Container.ownerDocument:", this.mapRef.current.ownerDocument)
       this.setState({ error: "Map container is not attached to DOM" })
       return
     }
 
     try {
-      console.log("🗺️ Starting map initialization...")
+      console.log("🗺️ INIT: Container validation passed, proceeding with initialization")
+      console.log("🔍 INIT DOM: Container.offsetWidth =", this.mapRef.current.offsetWidth)
+      console.log("🔍 INIT DOM: Container.offsetHeight =", this.mapRef.current.offsetHeight)
+      console.log("🔍 INIT DOM: Container.children.length =", this.mapRef.current.children.length)
 
       // Create a graphics layer for GeoJSON features
+      console.log("🗺️ INIT: Creating graphics layer")
       this.graphicsLayer = new GraphicsLayer()
+      console.log("✅ INIT: Graphics layer created successfully")
 
       // Get configuration from props
       const basemap = this.props.args.basemap || "topo-vector"
       const center = this.props.args.center || [-118.244, 34.052] // Default: Los Angeles coordinates
       const zoom = this.props.args.zoom || 12
-      // Note: viewMode (2d/3d) support would require SceneView for 3D - keeping as 2D for now
+      console.log("🗺️ INIT: Configuration - basemap:", basemap, "center:", center, "zoom:", zoom)
       
       // Handle layers - support both new 'layers' and legacy 'feature_layers' 
       let allFeatureLayers: FeatureLayer[] = []
       
       // New layers prop takes precedence
       if (this.props.args.layers && Array.isArray(this.props.args.layers)) {
+        console.log("🗺️ INIT: Using new 'layers' prop, count:", this.props.args.layers.length)
         const layerConfigs = this.props.args.layers
         allFeatureLayers = this.createLayersFromConfigs(layerConfigs)
       } 
       // Fallback to legacy feature_layers for backward compatibility
       else if (this.props.args.feature_layers && Array.isArray(this.props.args.feature_layers)) {
+        console.log("🗺️ INIT: Using legacy 'feature_layers' prop, count:", this.props.args.feature_layers.length)
         const featureLayerConfigs = this.props.args.feature_layers as FeatureLayerConfig[]
         allFeatureLayers = this.createFeatureLayers(featureLayerConfigs)
       }
       
       this.featureLayers = allFeatureLayers
+      console.log("✅ INIT: Feature layers created, count:", this.featureLayers.length)
 
       // Check again if component was unmounted during layer creation
       if (this.isUnmounted) {
-        console.log("🗺️ Component unmounted during layer creation, aborting initialization")
+        console.log("🚫 INIT: Component unmounted during layer creation, aborting initialization")
         return
       }
 
       // Create a Map instance with configurable basemap
+      console.log("🗺️ INIT: Creating Map instance")
       const allLayers = [this.graphicsLayer, ...this.featureLayers]
+      console.log("🗺️ INIT: Total layers to add:", allLayers.length)
       const map = new Map({
         basemap: basemap,
         layers: allLayers
       })
+      console.log("✅ INIT: Map instance created successfully")
 
       // Get GeoJSON data from props
       const geojson = this.props.args.geojson as GeoJSONFeatureCollection
+      console.log("🗺️ INIT: GeoJSON features count:", geojson?.features?.length || 0)
 
       // Final check before creating MapView
       if (this.isUnmounted || !this.mapRef.current || !this.mapRef.current.isConnected) {
-        console.log("🗺️ Component state changed, aborting MapView creation")
+        console.log("🚫 INIT: Component state changed, aborting MapView creation")
+        console.log("🔍 INIT STATE: isUnmounted =", this.isUnmounted)
+        console.log("🔍 INIT STATE: mapRef.current exists =", !!this.mapRef.current)
+        console.log("🔍 INIT STATE: mapRef.current.isConnected =", this.mapRef.current?.isConnected)
         return
       }
 
       // Additional safety: ensure container has proper dimensions
       if (this.mapRef.current.offsetWidth === 0 || this.mapRef.current.offsetHeight === 0) {
-        console.warn("🗺️ Map container has zero dimensions, initialization may fail")
+        console.warn("🗺️ INIT: Map container has zero dimensions, initialization may fail")
+        console.warn("🔍 INIT DIMENSIONS: offsetWidth =", this.mapRef.current.offsetWidth)
+        console.warn("🔍 INIT DIMENSIONS: offsetHeight =", this.mapRef.current.offsetHeight)
       }
 
       // Create a MapView instance with configurable properties
+      console.log("🗺️ INIT: Creating MapView instance")
+      console.log("🔍 INIT MAPVIEW: About to create MapView with container:", this.mapRef.current)
+      console.log("🔍 INIT MAPVIEW: Container tagName:", this.mapRef.current.tagName)
+      console.log("🔍 INIT MAPVIEW: Container className:", this.mapRef.current.className)
+      
       this.mapView = new MapView({
         container: this.mapRef.current,
         map: map,
         center: center,
         zoom: zoom
       })
+      console.log("✅ INIT: MapView instance created, waiting for ready state")
 
       // Wait for the view to load
+      console.log("🗺️ INIT: Waiting for MapView.when()")
       await this.mapView.when()
+      console.log("✅ INIT: MapView.when() completed successfully")
 
       // Check if component was unmounted during async initialization
       if (this.isUnmounted) {
-        console.log("🗺️ Component unmounted during async initialization, cleaning up")
+        console.log("🚫 INIT: Component unmounted during async initialization, cleaning up")
         this.cleanup()
         return
       }
 
       // Add interactive event handlers
+      console.log("🗺️ INIT: Adding event handlers")
       this.addEventHandlers()
+      console.log("✅ INIT: Event handlers added")
 
       // Process GeoJSON data if provided
       if (geojson && geojson.features && geojson.features.length > 0) {
+        console.log("🗺️ INIT: Processing GeoJSON features")
         const graphics = this.processGeoJSON(geojson)
+        console.log("🗺️ INIT: Adding graphics to layer, count:", graphics.length)
         this.graphicsLayer.addMany(graphics)
         
         // Auto-center and zoom to show all features
         if (graphics.length > 0) {
+          console.log("🗺️ INIT: Auto-centering to graphics")
           await this.mapView.goTo(graphics)
+          console.log("✅ INIT: Auto-centering completed")
         }
       }
       
       // Final check before setting state
       if (this.isUnmounted) {
-        console.log("🗺️ Component unmounted before completion, skipping state update")
+        console.log("🚫 INIT: Component unmounted before completion, skipping state update")
         return
       }
 
+      console.log("🗺️ INIT: Setting mapLoaded state to true")
       this.setState({ mapLoaded: true })
       
       // Set component value to indicate successful initialization
+      console.log("🗺️ INIT: Sending map_loaded event to Streamlit")
       Streamlit.setComponentValue({
         event: "map_loaded",
         basemap: basemap,
@@ -762,9 +1015,14 @@ class GeomapComponent extends StreamlitComponentBase<State> {
         timestamp: new Date().toISOString()
       })
 
-      console.log("✅ ArcGIS map initialized successfully")
+      console.log("✅ INIT: ArcGIS map initialized successfully")
+      console.log("🔍 FINAL STATE: mapView exists =", !!this.mapView)
+      console.log("🔍 FINAL STATE: mapView.destroyed =", this.mapView?.destroyed)
+      console.log("🔍 FINAL STATE: mapRef.current.children.length =", this.mapRef.current?.children.length)
     } catch (error) {
-      console.error("❌ Error initializing ArcGIS map:", error)
+      console.error("❌ INIT: Error initializing ArcGIS map:", error)
+      console.error("❌ INIT: Error type:", error?.constructor?.name)
+      console.error("❌ INIT: Full error object:", error)
       
       // Only update state if component hasn't been unmounted
       if (!this.isUnmounted) {
