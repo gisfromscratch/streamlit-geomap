@@ -22,6 +22,10 @@ cd frontend
 echo "📦 Installing Node.js dependencies..."
 npm install
 
+# Build the frontend for production
+echo "🔨 Building frontend for production..."
+npm run build
+
 echo ""
 echo "✅ Setup complete!"
 echo ""

@@ -21,7 +21,7 @@ if not _RELEASE:
     )
 else:
     parent_dir = os.path.dirname(os.path.abspath(__file__))
-    build_dir = os.path.join(parent_dir, "frontend/build")
+    build_dir = os.path.join(parent_dir, "..", "frontend", "build")
     _component_func = components.declare_component(
         "streamlit_geomap", path=build_dir
     )
