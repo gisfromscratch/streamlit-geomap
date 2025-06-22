@@ -707,6 +707,28 @@ streamlit run example_app.py
 
 The React development server will run on `http://localhost:3001` and the Streamlit app on `http://localhost:8501`.
 
+### Troubleshooting
+
+**Component not loading error:**
+```
+Your app is having trouble loading the streamlit_geomap.streamlit_geomap component.
+The app is attempting to load the component from http://localhost:3001/
+```
+
+**Solution:** Make sure the React dev server is running on port 3001:
+1. Check that `frontend/.env` contains `PORT=3001`
+2. Start the React dev server: `cd frontend && npm start`
+3. Verify it's running on the correct port
+
+**st.set_page_config() error:**
+```
+StreamlitSetPageConfigMustBeFirstCommandError: set_page_config() can only be called once per app page
+```
+
+**Solution:** This has been fixed in the current version. If you still see this error, make sure you're using the latest version and that `st.set_page_config()` is the first Streamlit command in your script.
+
+For detailed development setup instructions, see [DEVELOPMENT_SETUP.md](DEVELOPMENT_SETUP.md).
+
 ## Project Structure
 
 ```
