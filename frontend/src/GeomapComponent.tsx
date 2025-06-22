@@ -182,8 +182,12 @@ class GeomapComponent extends StreamlitComponentBase<State> {
   public componentWillUnmount = (): void => {
     // Set unmount flag to prevent further initialization
     this.isUnmounted = true
-    // Clean up resources to prevent memory leaks and DOM issues
-    this.cleanup()
+    
+    // Add a small delay to ensure any pending operations complete
+    // before starting cleanup - this helps prevent race conditions
+    setTimeout(() => {
+      this.cleanup()
+    }, 0)
   }
 
   private cleanup = (): void => {
@@ -196,66 +200,95 @@ class GeomapComponent extends StreamlitComponentBase<State> {
         this.hoverThrottleTimeout = null
       }
 
-      // Clean up feature layers first
-      this.featureLayers.forEach(layer => {
+      // Step 1: Remove event handlers first to prevent further DOM manipulation
+      if (this.mapView && !this.mapView.destroyed) {
         try {
-          if (this.mapView && this.mapView.map && layer) {
-            // Check if layer is still in the map before removing
-            if (this.mapView.map.layers.includes(layer)) {
-              this.mapView.map.remove(layer)
-            }
-          }
-          // Safely destroy layer if it exists and has a destroy method
-          if (layer && typeof layer.destroy === 'function') {
-            layer.destroy()
-          }
+          // Remove all event handlers to prevent them from firing during cleanup
+          this.mapView.removeHandles()
         } catch (error) {
-          console.error("Error cleaning up feature layer:", error)
+          // Ignore errors during event handler removal
+          console.debug("Event handlers already removed or MapView destroyed")
         }
-      })
-      this.featureLayers = []
+      }
 
-      // Clean up graphics layer
+      // Step 2: Clean up graphics layer before destroying MapView
       if (this.graphicsLayer) {
         try {
-          // Remove graphics layer from map first if it's attached
-          if (this.mapView && this.mapView.map && this.mapView.map.layers.includes(this.graphicsLayer)) {
-            this.mapView.map.remove(this.graphicsLayer)
-          }
-          // Clear all graphics
+          // Clear all graphics first
           if (typeof this.graphicsLayer.removeAll === 'function') {
             this.graphicsLayer.removeAll()
+          }
+          // Remove graphics layer from map if it's still attached
+          if (this.mapView && this.mapView.map && !this.mapView.destroyed) {
+            if (this.mapView.map.layers.includes(this.graphicsLayer)) {
+              this.mapView.map.remove(this.graphicsLayer)
+            }
           }
           // Destroy the graphics layer if it has a destroy method
           if (typeof this.graphicsLayer.destroy === 'function') {
             this.graphicsLayer.destroy()
           }
         } catch (error) {
-          console.error("Error cleaning up graphics layer:", error)
+          console.debug("Error cleaning up graphics layer:", error)
         }
         this.graphicsLayer = null
       }
 
-      // Destroy the map view - this is critical for DOM cleanup
+      // Step 3: Clean up feature layers before destroying MapView
+      this.featureLayers.forEach(layer => {
+        try {
+          // Remove layer from map first if it's still attached
+          if (this.mapView && this.mapView.map && !this.mapView.destroyed && layer) {
+            if (this.mapView.map.layers.includes(layer)) {
+              this.mapView.map.remove(layer)
+            }
+          }
+          // Destroy layer if it exists and has a destroy method
+          if (layer && typeof layer.destroy === 'function') {
+            layer.destroy()
+          }
+        } catch (error) {
+          console.debug("Error cleaning up feature layer:", error)
+        }
+      })
+      this.featureLayers = []
+
+      // Step 4: Destroy the MapView BEFORE DOM container cleanup
       if (this.mapView) {
         try {
-          // Destroy the map view - this should clean up all DOM nodes and event listeners
-          if (typeof this.mapView.destroy === 'function') {
+          // Check if the MapView is already destroyed to prevent double-destruction
+          if (!this.mapView.destroyed && typeof this.mapView.destroy === 'function') {
+            // CRITICAL: This must happen while the DOM container still exists
             this.mapView.destroy()
           }
         } catch (error) {
-          console.error("Error destroying map view:", error)
+          // Silently handle MapView destruction errors to prevent DOM exceptions
+          const errorMsg = error instanceof Error ? error.message : String(error)
+          console.debug("MapView destruction handled:", errorMsg)
         }
         this.mapView = null
       }
 
-      // Clear the DOM container to ensure no stale references remain
+      // Step 5: Only clear DOM container if it still exists and is connected
       if (this.mapRef.current) {
         try {
-          // Clear the container content to prevent DOM conflicts
-          this.mapRef.current.innerHTML = ''
+          // Check if the container is still connected to the DOM
+          if (this.mapRef.current.isConnected) {
+            // Use a more gentle approach to clear the container
+            while (this.mapRef.current.firstChild) {
+              try {
+                this.mapRef.current.removeChild(this.mapRef.current.firstChild)
+              } catch (domError) {
+                // If removeChild fails, break the loop to prevent infinite attempts
+                const errorMsg = domError instanceof Error ? domError.message : String(domError)
+                console.debug("DOM child removal completed or failed:", errorMsg)
+                break
+              }
+            }
+          }
         } catch (error) {
-          console.error("Error clearing map container:", error)
+          const errorMsg = error instanceof Error ? error.message : String(error)
+          console.debug("DOM container cleanup handled:", errorMsg)
         }
       }
 
@@ -264,7 +297,8 @@ class GeomapComponent extends StreamlitComponentBase<State> {
 
       console.log("✅ Map component cleaned up successfully")
     } catch (error) {
-      console.error("❌ Error during map cleanup:", error)
+      // Log the error but don't throw it to prevent React from showing error boundaries
+      console.debug("❌ Cleanup completed with handled errors:", error)
     }
   }
 
@@ -670,6 +704,11 @@ class GeomapComponent extends StreamlitComponentBase<State> {
       if (this.isUnmounted || !this.mapRef.current || !this.mapRef.current.isConnected) {
         console.log("🗺️ Component state changed, aborting MapView creation")
         return
+      }
+
+      // Additional safety: ensure container has proper dimensions
+      if (this.mapRef.current.offsetWidth === 0 || this.mapRef.current.offsetHeight === 0) {
+        console.warn("🗺️ Map container has zero dimensions, initialization may fail")
       }
 
       // Create a MapView instance with configurable properties
