@@ -60,6 +60,7 @@ class GeomapComponent extends StreamlitComponentBase<State> {
   private featureLayers: FeatureLayer[] = []
   private lastHoveredFeature: any = null
   private hoverThrottleTimeout: NodeJS.Timeout | null = null
+  private isUnmounted: boolean = false
 
   public state: State = {
     mapLoaded: false,
@@ -179,6 +180,8 @@ class GeomapComponent extends StreamlitComponentBase<State> {
   }
 
   public componentWillUnmount = (): void => {
+    // Set unmount flag to prevent further initialization
+    this.isUnmounted = true
     // Clean up resources to prevent memory leaks and DOM issues
     this.cleanup()
   }
@@ -194,10 +197,16 @@ class GeomapComponent extends StreamlitComponentBase<State> {
       // Clean up feature layers first
       this.featureLayers.forEach(layer => {
         try {
-          if (this.mapView && this.mapView.map) {
-            this.mapView.map.remove(layer)
+          if (this.mapView && this.mapView.map && layer) {
+            // Check if layer is still in the map before removing
+            if (this.mapView.map.layers.includes(layer)) {
+              this.mapView.map.remove(layer)
+            }
           }
-          layer.destroy()
+          // Safely destroy layer if it exists and has a destroy method
+          if (layer && typeof layer.destroy === 'function') {
+            layer.destroy()
+          }
         } catch (error) {
           console.error("Error cleaning up feature layer:", error)
         }
@@ -207,7 +216,10 @@ class GeomapComponent extends StreamlitComponentBase<State> {
       // Clean up graphics layer
       if (this.graphicsLayer) {
         try {
-          this.graphicsLayer.removeAll()
+          // Check if graphics layer still exists and has removeAll method
+          if (typeof this.graphicsLayer.removeAll === 'function') {
+            this.graphicsLayer.removeAll()
+          }
         } catch (error) {
           console.error("Error cleaning up graphics layer:", error)
         }
@@ -217,7 +229,10 @@ class GeomapComponent extends StreamlitComponentBase<State> {
       // Destroy the map view
       if (this.mapView) {
         try {
-          this.mapView.destroy()
+          // Check if mapView still exists and has destroy method
+          if (typeof this.mapView.destroy === 'function') {
+            this.mapView.destroy()
+          }
         } catch (error) {
           console.error("Error destroying map view:", error)
         }
@@ -538,6 +553,12 @@ class GeomapComponent extends StreamlitComponentBase<State> {
   private initializeMapSafely = (retries: number = 0): void => {
     const maxRetries = 50 // Maximum 5 seconds of retries (50 * 100ms)
     
+    // Check if component has been unmounted
+    if (this.isUnmounted) {
+      console.log("🗺️ Component unmounted, canceling map initialization")
+      return
+    }
+    
     // Check if component args are ready (data from Python side)
     if (!this.props.args) {
       if (retries < maxRetries) {
@@ -562,6 +583,12 @@ class GeomapComponent extends StreamlitComponentBase<State> {
   }
 
   private initializeMap = async (): Promise<void> => {
+    // Check if component has been unmounted
+    if (this.isUnmounted) {
+      console.log("🗺️ Component unmounted, canceling map initialization")
+      return
+    }
+    
     if (!this.mapRef.current) {
       this.setState({ error: "Map container not found" })
       return
