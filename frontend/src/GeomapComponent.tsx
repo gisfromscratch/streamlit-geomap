@@ -148,7 +148,12 @@ class GeomapComponent extends StreamlitComponentBase<State> {
         
         // Auto-center and zoom to show all features
         if (graphics.length > 0) {
-          this.mapView.goTo(graphics)
+          // Ensure mapView is ready before calling goTo to avoid "Animation Manager is undefined" error
+          this.mapView.when(() => {
+            this.mapView?.goTo(graphics).catch((error) => {
+              console.warn("Failed to auto-center map:", error)
+            })
+          })
         }
       }
       
