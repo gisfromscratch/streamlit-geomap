@@ -197,6 +197,10 @@ typings/
 # Exception: Keep frontend/.env for port configuration
 !frontend/.env
 
+# Streamlit Component build directory should only be in frontend/build/
+# NOT in streamlit_geomap/frontend/ (old location)
+streamlit_geomap/frontend/
+
 # parcel-bundler cache (https://parceljs.org/)
 .cache
 .parcel-cache
