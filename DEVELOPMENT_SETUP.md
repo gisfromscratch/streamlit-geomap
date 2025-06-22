@@ -92,6 +92,24 @@ The app is attempting to load the component from http://localhost:3001/, and has
 2. Check that `frontend/.env` contains `PORT=3001`
 3. Restart the React dev server if needed
 
+### Connection Retry Errors
+
+If you see in the browser console:
+```
+Streamlit connection failed after maximum retries
+```
+
+This issue has been **fixed** in the latest version. The fix includes:
+- Added proper `Streamlit.setComponentReady()` call
+- Fixed Streamlit API usage 
+- Added better error messages and troubleshooting tips
+
+**If you still see this error:**
+1. Make sure you have the latest version of the component
+2. Rebuild the frontend: `cd frontend && npm run build`
+3. Check browser console for detailed troubleshooting tips
+4. Verify React dev server is running on port 3001 (development mode)
+
 ### st.set_page_config() Error
 
 If you see:
