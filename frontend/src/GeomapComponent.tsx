@@ -126,6 +126,7 @@ class GeomapComponent extends StreamlitComponentBase<State> {
   public componentDidMount = (): void => {
     // Signal to Streamlit that the component is ready
     Streamlit.setComponentReady()
+    console.log("🗺️ Streamlit Geomap: Component ready signal sent")
     
     // Initialize the map when component mounts, but check if Streamlit is ready first
     this.initializeMapSafely()
@@ -535,17 +536,22 @@ class GeomapComponent extends StreamlitComponentBase<State> {
     // Check if component args are ready (data from Python side)
     if (!this.props.args) {
       if (retries < maxRetries) {
-        console.log(`Streamlit args not ready, retrying in 100ms... (${retries + 1}/${maxRetries})`)
+        console.log(`🗺️ Streamlit args not ready, retrying in 100ms... (${retries + 1}/${maxRetries})`)
         setTimeout(() => this.initializeMapSafely(retries + 1), 100)
         return
       } else {
         // Max retries reached, show error
-        console.error("Streamlit connection failed after maximum retries")
-        this.setState({ error: "Failed to connect to Streamlit. Please refresh the page." })
+        console.error("🚨 Streamlit connection failed after maximum retries")
+        console.error("🔧 Troubleshooting tips:")
+        console.error("   - Make sure React dev server is running on port 3001 (in development)")
+        console.error("   - Check that the component build is up to date (run 'npm run build')")
+        console.error("   - Verify Streamlit and component are compatible versions")
+        this.setState({ error: "Failed to connect to Streamlit. Please refresh the page and check the console for troubleshooting tips." })
         return
       }
     }
     
+    console.log("🗺️ Streamlit connection ready, initializing map...")
     // Streamlit is ready, proceed with map initialization
     this.initializeMap()
   }
@@ -630,7 +636,7 @@ class GeomapComponent extends StreamlitComponentBase<State> {
         timestamp: new Date().toISOString()
       })
 
-      console.log("ArcGIS map initialized successfully")
+      console.log("🗺️ ArcGIS map initialized successfully")
     } catch (error) {
       console.error("Error initializing ArcGIS map:", error)
       this.setState({ 
