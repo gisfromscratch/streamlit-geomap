@@ -1,5 +1,5 @@
-import React, { useEffect, useRef, useState } from "react";
-import { Streamlit } from "streamlit-component-lib";
+import React, { createRef } from "react";
+import { Streamlit, withStreamlitConnection } from "streamlit-component-lib";
 import MapView from "@arcgis/core/views/MapView";
 import Map from "@arcgis/core/Map";
 import GraphicsLayer from "@arcgis/core/layers/GraphicsLayer";
@@ -9,23 +9,63 @@ import Point from "@arcgis/core/geometry/Point";
 import SimpleMarkerSymbol from "@arcgis/core/symbols/SimpleMarkerSymbol";
 import "./GeomapComponent.css";
 
-const GeomapComponent = ({ args }: { args: any }) => {
-  const mapRef = useRef<HTMLDivElement>(null);
-  const [mapLoaded, setMapLoaded] = useState(false);
-  const [error, setError] = useState<string | undefined>(undefined);
+interface GeomapProps {
+  args: {
+    width: number;
+    height?: string;
+    basemap?: string;
+    center?: [number, number];
+    zoom?: number;
+    feature_layers?: Array<{
+      url: string;
+      title?: string;
+      visible?: boolean;
+      renderer?: any;
+      label_info?: any;
+    }>;
+  };
+  width: number;
+  disabled: boolean;
+}
 
-  useEffect(() => {
-    if (!mapRef.current) {
-      setError("Map container not found");
+class GeomapComponent extends React.Component<GeomapProps> {
+  private mapRef = createRef<HTMLDivElement>();
+  private mapView: MapView | null = null;
+
+  componentDidMount() {
+    this.initializeMap();
+  }
+
+  componentDidUpdate(prevProps: GeomapProps) {
+    if (JSON.stringify(prevProps.args) !== JSON.stringify(this.props.args)) {
+      this.initializeMap();
+    }
+  }
+
+  componentWillUnmount() {
+    if (this.mapView) {
+      this.mapView.destroy();
+      this.mapView = null;
+    }
+  }
+
+  initializeMap() {
+    if (!this.mapRef.current) {
+      console.error("Map container not found");
       return;
     }
 
-    const graphicsLayer = new GraphicsLayer();
-    const basemap = args.basemap || "topo-vector";
-    const center = args.center || [-118.244, 34.052];
-    const zoom = args.zoom || 12;
+    if (this.mapView) {
+      this.mapView.destroy();
+      this.mapView = null;
+    }
 
-    const featureLayers = args.feature_layers?.map((config: any) => {
+    const graphicsLayer = new GraphicsLayer();
+    const basemap = this.props.args.basemap || "topo-vector";
+    const center = this.props.args.center || [-118.244, 34.052];
+    const zoom = this.props.args.zoom || 12;
+
+    const featureLayers = this.props.args.feature_layers?.map((config) => {
       const layerConfig: any = {
         url: config.url,
         title: config.title,
@@ -41,58 +81,31 @@ const GeomapComponent = ({ args }: { args: any }) => {
       layers: [graphicsLayer, ...featureLayers],
     });
 
-    const mapView = new MapView({
-      container: mapRef.current,
+    this.mapView = new MapView({
+      container: this.mapRef.current,
       map,
       center,
       zoom,
     });
 
-    mapView.when(() => {
-      setMapLoaded(true);
+    this.mapView.when(() => {
+      const frameHeight = parseInt(this.props.args.height || "400", 10); // Parse height as number
+      Streamlit.setFrameHeight(frameHeight); // Explicitly set frame height
       Streamlit.setComponentReady();
     }).catch((err) => {
-      setError(`Failed to initialize map: ${err.message}`);
+      console.error("Failed to initialize map:", err);
     });
+  }
 
-    return () => {
-      mapView.destroy();
-    };
-  }, [args]);
+  render() {
+    const { width = "100%", height = "400px" } = this.props.args;
 
-  const processGeoJSON = (geojson: any) => {
-    return geojson.features.map((feature: any) => {
-      const [longitude, latitude] = feature.geometry.coordinates;
-      const point = new Point({ longitude, latitude });
-      const symbol = new SimpleMarkerSymbol({
-        color: [226, 119, 40],
-        outline: { color: [255, 255, 255], width: 2 },
-        size: 8,
-      });
-      return new Graphic({ geometry: point, symbol, attributes: feature.properties });
-    });
-  };
-
-  useEffect(() => {
-    if (mapLoaded && args.geojson) {
-      const graphicsLayer = new GraphicsLayer();
-      const graphics = processGeoJSON(args.geojson);
-      graphicsLayer.addMany(graphics);
-    }
-  }, [mapLoaded, args.geojson]);
-
-  return (
-    <div style={{ width: args.width || "100%", height: args.height || "400px" }}>
-      <div ref={mapRef} className="map-container">
-        {!mapLoaded && !error && (
-          <div className="map-loading">
-            <h3>Loading Map...</h3>
-          </div>
-        )}
-        {error && <div className="map-error">{error}</div>}
+    return (
+      <div style={{ width, height }}>
+        <div ref={this.mapRef} className="map-container"></div>
       </div>
-    </div>
-  );
-};
+    );
+  }
+}
 
-export default GeomapComponent;
+export default withStreamlitConnection(GeomapComponent);
