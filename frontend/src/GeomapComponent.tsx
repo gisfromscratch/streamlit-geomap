@@ -12,6 +12,7 @@ import FeatureLayer from "@arcgis/core/layers/FeatureLayer"
 import Point from "@arcgis/core/geometry/Point"
 import SimpleMarkerSymbol from "@arcgis/core/symbols/SimpleMarkerSymbol"
 import esriConfig from "@arcgis/core/config"
+import "./GeomapComponent.css"
 
 interface State {
   mapLoaded?: boolean
@@ -69,10 +70,7 @@ class GeomapComponent extends StreamlitComponentBase<State> {
   private lastHeight: string | undefined = undefined
 
   public state: State = {
-    mapLoaded: true, // This is a quick fix, because whenever we modify the state during initialization, it causes a re-render
-    // we need to set it to true so that the component does not show the loading state
-    // since then we receive comonent errors because the re-render does some removeChild calls!
-    // we need a singleton approach to avoid this
+    mapLoaded: true, // Set to true initially to avoid setState during mount
     error: undefined,
     selectedGraphics: []
   }
@@ -85,47 +83,26 @@ class GeomapComponent extends StreamlitComponentBase<State> {
     const width = this.props.args.width || "100%"
     
     return (
-      console.log("🗺️ RENDER: Rendering GeomapComponent with height:", height, "and width:", width),
       <div style={{ width: width, height: height }}>
         <div 
           ref={this.mapRef}
-          style={{ 
-            width: "100%", 
-            height: "100%",
-            border: "1px solid #ccc",
-            borderRadius: "4px",
-            backgroundColor: "#f5f5f5"
-          }}
+          className="map-container"
         >
           {!mapLoaded && !error && (
-            <div style={{ 
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              height: "100%",
-              color: "#666"
-            }}>
-              <div style={{ textAlign: "center" }}>
-                <h3 style={{ margin: "0 0 10px 0" }}>Loading Map...</h3>
-                <p style={{ margin: 0 }}>
+            <div className="map-loading">
+              <div className="map-loading-content">
+                <h3 className="map-loading-title">Loading Map...</h3>
+                <p className="map-loading-text">
                   Initializing ArcGIS Maps SDK
                 </p>
               </div>
             </div>
           )}
           {error && (
-            <div style={{ 
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              height: "100%",
-              color: "#d32f2f"
-            }}>
-              <div style={{ textAlign: "center" }}>
-                <h3 style={{ margin: "0 0 10px 0" }}>Map Error</h3>
-                <p style={{ margin: 0, fontSize: "14px" }}>
-                  {error}
-                </p>
+            <div className="map-error">
+              <div className="map-error-content">
+                <h3 className="map-error-title">Map Error</h3>
+                <p className="map-error-text">{error}</p>
               </div>
             </div>
           )}
@@ -135,6 +112,11 @@ class GeomapComponent extends StreamlitComponentBase<State> {
   }
 
   public componentDidMount = async (): Promise<void> => {
+    console.log("🗺️ MOUNT: GeomapComponent mounting with props:", {
+      height: this.props.args.height || "400px",
+      width: this.props.args.width || "100%"
+    })
+
     // Set up DOM mutation observer to catch unexpected DOM changes
     //this.setupDOMObserver()
 
@@ -149,78 +131,67 @@ class GeomapComponent extends StreamlitComponentBase<State> {
     Streamlit.setComponentReady()
   }
 
-  public componentDidUpdate = (): void => {
+  public componentDidUpdate = (prevProps?: any, prevState?: any): void => {
+    // Ensure prevProps exists
+    if (!prevProps) {
+      return
+    }
+
     // Check if height has changed and update frame height
     const currentHeight = this.props.args.height || "400px"
-    if (this.lastHeight !== currentHeight) {
+    const prevHeight = prevProps.args.height || "400px"
+    if (prevHeight !== currentHeight) {
       this.lastHeight = currentHeight
       this.setStreamlitFrameHeight()
+      console.log("🗺️ UPDATE: Height changed from", prevHeight, "to", currentHeight)
+    }
+
+    // Only proceed with map updates if map is initialized
+    if (!this.mapView) {
+      return
     }
 
     // Update the basemap if it has changed
     const currentBasemap = this.props.args.basemap || "topo-vector"
-    if (this.mapView && this.mapView.map && this.mapView.map.basemap !== currentBasemap) {
+    const prevBasemap = prevProps.args.basemap || "topo-vector"
+    if (this.mapView.map && prevBasemap !== currentBasemap) {
       this.mapView.map.basemap = currentBasemap
+      console.log("🗺️ UPDATE: Basemap changed from", prevBasemap, "to", currentBasemap)
     }
 
     // Update center and zoom if they have changed
-    const currentCenter = this.props.args.center || [-118.244, 34.052] // Default: Los Angeles coordinates
+    const currentCenter = this.props.args.center || [-118.244, 34.052]
+    const prevCenter = prevProps.args.center || [-118.244, 34.052]
     const currentZoom = this.props.args.zoom || 12
-    if (this.mapView) {
-      if (this.mapView.center.longitude !== currentCenter[0] || this.mapView.center.latitude !== currentCenter[1]) {
-        this.mapView.center = new Point({
-          longitude: currentCenter[0],
-          latitude: currentCenter[1]
-        })
-      }
-      if (this.mapView.zoom !== currentZoom) {
-        this.mapView.zoom = currentZoom
-      }
+    const prevZoom = prevProps.args.zoom || 12
+
+    if (prevCenter[0] !== currentCenter[0] || prevCenter[1] !== currentCenter[1]) {
+      this.mapView.center = new Point({
+        longitude: currentCenter[0],
+        latitude: currentCenter[1]
+      })
+      console.log("🗺️ UPDATE: Center changed from", prevCenter, "to", currentCenter)
+    }
+    
+    if (prevZoom !== currentZoom) {
+      this.mapView.zoom = currentZoom
+      console.log("🗺️ UPDATE: Zoom changed from", prevZoom, "to", currentZoom)
     }
 
     // Update graphics if GeoJSON data has changed
     const currentGeoJSON = this.props.args.geojson
-    const currentFeatureLayers = this.props.args.feature_layers as FeatureLayerConfig[]
+    const prevGeoJSON = prevProps.args.geojson
     
-    if (this.mapView && this.graphicsLayer) {
-      // Clear existing graphics
-      this.graphicsLayer.removeAll()
-      
-      // Add new graphics if GeoJSON is provided
-      if (currentGeoJSON && currentGeoJSON.features && currentGeoJSON.features.length > 0) {
-        const graphics = this.processGeoJSON(currentGeoJSON as GeoJSONFeatureCollection)
-        this.graphicsLayer.addMany(graphics)
-        
-        // Auto-center and zoom to show all features
-        if (graphics.length > 0) {
-          // Ensure mapView is ready before calling goTo to avoid "Animation Manager is undefined" error
-          this.mapView.when(() => {
-            this.mapView?.goTo(graphics).catch((error) => {
-              console.warn("Failed to auto-center map:", error)
-            })
-          })
-        }
-      }
-      
-      // Handle feature layer updates
-      if (currentFeatureLayers && Array.isArray(currentFeatureLayers) && this.mapView && this.mapView.map) {
-        
-        // Remove existing feature layers
-        this.featureLayers.forEach((layer, index) => {
-          if (this.mapView && this.mapView.map) {
-            this.mapView.map.remove(layer)
-          }
-          layer.destroy()
-        })
-        
-        // Create and add new feature layers
-        this.featureLayers = this.createFeatureLayers(currentFeatureLayers)
-        this.featureLayers.forEach((layer, index) => {
-          if (this.mapView && this.mapView.map) {
-            this.mapView.map.add(layer)
-          }
-        })
-      }
+    if (this.updateGeojsonLayer(prevGeoJSON, currentGeoJSON)) {
+      console.log("🗺️ UPDATE: GeoJSON data updated")
+    }
+
+    // Handle feature layer updates
+    const currentFeatureLayers = this.props.args.feature_layers as FeatureLayerConfig[]
+    const prevFeatureLayers = prevProps.args.feature_layers as FeatureLayerConfig[]
+    
+    if (this.updateFeatureLayers(prevFeatureLayers, currentFeatureLayers)) {
+      console.log("🗺️ UPDATE: Feature layers updated")
     }
   }
 
@@ -242,7 +213,7 @@ class GeomapComponent extends StreamlitComponentBase<State> {
     const height = this.props.args.height || "400px"
     const numericHeight = this.extractNumericHeight(height)
     
-    console.log("🖼️ FRAME HEIGHT: Setting Streamlit frame height to:", numericHeight, "from prop:", height)
+    console.log("🖼️ FRAME HEIGHT: Setting Streamlit frame height to:", numericHeight)
     Streamlit.setFrameHeight(numericHeight)
   }
 
@@ -749,7 +720,82 @@ class GeomapComponent extends StreamlitComponentBase<State> {
     })
   }
 
+  /**
+   * Updates GeoJSON layer if data has changed
+   * @param prevGeoJSON Previous GeoJSON data
+   * @param currentGeoJSON Current GeoJSON data
+   * @returns true if update was performed, false otherwise
+   */
+  private updateGeojsonLayer = (prevGeoJSON: any, currentGeoJSON: any): boolean => {
+    if (!this.mapView || !this.graphicsLayer) {
+      return false
+    }
 
+    // Simple comparison - in a production app you might want more sophisticated comparison
+    const hasChanged = JSON.stringify(prevGeoJSON) !== JSON.stringify(currentGeoJSON)
+    
+    if (hasChanged) {
+      // Clear existing graphics
+      this.graphicsLayer.removeAll()
+      
+      // Add new graphics if GeoJSON is provided
+      if (currentGeoJSON && currentGeoJSON.features && currentGeoJSON.features.length > 0) {
+        const graphics = this.processGeoJSON(currentGeoJSON as GeoJSONFeatureCollection)
+        this.graphicsLayer.addMany(graphics)
+        
+        // Auto-center and zoom to show all features
+        if (graphics.length > 0) {
+          // Ensure mapView is ready before calling goTo to avoid "Animation Manager is undefined" error
+          this.mapView.when(() => {
+            this.mapView?.goTo(graphics).catch((error) => {
+              console.warn("Failed to auto-center map:", error)
+            })
+          })
+        }
+      }
+      return true
+    }
+    
+    return false
+  }
+
+  /**
+   * Updates feature layers if configuration has changed
+   * @param prevLayers Previous feature layer configuration
+   * @param currentLayers Current feature layer configuration
+   * @returns true if update was performed, false otherwise
+   */
+  private updateFeatureLayers = (prevLayers: FeatureLayerConfig[], currentLayers: FeatureLayerConfig[]): boolean => {
+    if (!this.mapView || !this.mapView.map) {
+      return false
+    }
+
+    // Simple comparison - in a production app you might want more sophisticated comparison
+    const hasChanged = JSON.stringify(prevLayers) !== JSON.stringify(currentLayers)
+    
+    if (hasChanged && currentLayers && Array.isArray(currentLayers)) {
+      // Remove existing feature layers
+      this.featureLayers.forEach((layer) => {
+        if (this.mapView && this.mapView.map) {
+          this.mapView.map.remove(layer)
+        }
+        if (layer && typeof layer.destroy === 'function') {
+          layer.destroy()
+        }
+      })
+      
+      // Create and add new feature layers
+      this.featureLayers = this.createFeatureLayers(currentLayers)
+      this.featureLayers.forEach((layer) => {
+        if (this.mapView && this.mapView.map) {
+          this.mapView.map.add(layer)
+        }
+      })
+      return true
+    }
+    
+    return false
+  }
 
   /**
    * Initializes a simple map using the configuration provided via component props.
@@ -766,42 +812,63 @@ class GeomapComponent extends StreamlitComponentBase<State> {
    * @private
    */
   private initializeSimpleMap = async (): Promise<void> => {
-      // Get configuration from props
-      const basemap = this.props.args.basemap || "topo-vector"
-      const center = this.props.args.center || [-118.244, 34.052] // Default: Los Angeles coordinates
-      const zoom = this.props.args.zoom || 12
+      // Guard against multiple initialization
+      if (this.mapView || !this.mapRef.current) {
+        console.log("🗺️ INIT: Skipping initialization - mapView exists or container not ready")
+        return
+      }
 
-      // Create a Map instance with configurable basemap
-      const map = new Map({
-        basemap: basemap
-      })
+      try {
+        // Get configuration from props
+        const basemap = this.props.args.basemap || "topo-vector"
+        const center = this.props.args.center || [-118.244, 34.052] // Default: Los Angeles coordinates
+        const zoom = this.props.args.zoom || 12
 
-      this.mapView = new MapView({
-        container: this.mapRef.current,
-        map: map,
-        center: center,
-        zoom: zoom
-      })
+        console.log("🗺️ INIT: Initializing map with config:", { basemap, center, zoom })
 
-      // Wait for the view to load
-      await this.mapView.when()
+        // Create a Map instance with configurable basemap
+        const map = new Map({
+          basemap: basemap
+        })
 
-      // Map is now initialized, define state to indicate readiness
-      // setState would trigger a component re-render
-      // we need to avoid that during initialization
-      //this.state.mapLoaded = true
+        this.mapView = new MapView({
+          container: this.mapRef.current,
+          map: map,
+          center: center,
+          zoom: zoom
+        })
 
-      // Set component value to indicate successful initialization
-      Streamlit.setComponentValue({
-        event: "map_loaded",
-        basemap: basemap,
-        center: [this.mapView.center.longitude, this.mapView.center.latitude],
-        zoom: this.mapView.zoom,
-        //featuresRendered: geojson?.features?.length || 0,
-        featuresRendered: 0,
-        featureLayersLoaded: this.featureLayers.length,
-        timestamp: new Date().toISOString()
-      })
+        // Wait for the view to load
+        await this.mapView.when()
+
+        // Initialize graphics layer for GeoJSON features
+        this.graphicsLayer = new GraphicsLayer()
+        if (this.mapView && this.mapView.map) {
+          this.mapView.map.add(this.graphicsLayer)
+        }
+
+        // Updating the state causes a Node.removeChild error: The node to be removed is not a child of this node...
+        // No need to update state here; mapLoaded is always true
+        //this.setState({ mapLoaded: true })
+        console.log("🗺️ INIT: Map initialization completed successfully")
+
+        // Set component value to indicate successful initialization
+        Streamlit.setComponentValue({
+          event: "map_loaded",
+          basemap: basemap,
+          center: [this.mapView.center.longitude, this.mapView.center.latitude],
+          zoom: this.mapView.zoom,
+          featuresRendered: 0,
+          featureLayersLoaded: this.featureLayers.length,
+          timestamp: new Date().toISOString()
+        })
+      } catch (error) {
+        console.error("🚨 INIT: Map initialization failed:", error)
+        this.setState({ 
+          error: error instanceof Error ? error.message : "Failed to initialize map",
+          mapLoaded: false 
+        })
+      }
   }
 
 
