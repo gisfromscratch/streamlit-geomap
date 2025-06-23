@@ -70,7 +70,7 @@ class GeomapComponent extends StreamlitComponentBase<State> {
   private lastHeight: string | undefined = undefined
 
   public state: State = {
-    mapLoaded: false, // Start with false, will be set to true after successful initialization
+    mapLoaded: true, // Set to true initially to avoid setState during mount
     error: undefined,
     selectedGraphics: []
   }
@@ -847,9 +847,9 @@ class GeomapComponent extends StreamlitComponentBase<State> {
           this.mapView.map.add(this.graphicsLayer)
         }
 
-        // Update state to indicate map is loaded
-        this.setState({ mapLoaded: true })
-
+        // Updating the state causes a Node.removeChild error: The node to be removed is not a child of this node...
+        // No need to update state here; mapLoaded is always true
+        //this.setState({ mapLoaded: true })
         console.log("🗺️ INIT: Map initialization completed successfully")
 
         // Set component value to indicate successful initialization
