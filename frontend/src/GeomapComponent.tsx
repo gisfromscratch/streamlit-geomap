@@ -16,13 +16,12 @@ interface GeomapProps {
     basemap?: string;
     center?: [number, number];
     zoom?: number;
-    feature_layers?: Array<{
+    layers?: Array<{
       url: string;
       title?: string;
-      visible?: boolean;
-      renderer?: any;
-      label_info?: any;
+      type?: string;
     }>;
+    geojson?: any; // Added geojson argument
   };
   width: number;
   disabled: boolean;
@@ -65,21 +64,16 @@ class GeomapComponent extends React.Component<GeomapProps> {
     const center = this.props.args.center || [-118.244, 34.052];
     const zoom = this.props.args.zoom || 12;
 
-    const featureLayers = this.props.args.feature_layers?.map((config) => {
-      const layerConfig: any = {
-        url: config.url,
-        title: config.title,
-        visible: config.visible,
-        renderer: config.renderer,
-        labelInfo: config.label_info,
-      };
-      return new FeatureLayer(layerConfig);
-    }) || [];
+    console.log("Initializing map with args:", this.props.args);
+
+    const featureLayers = this.createFeatureLayers(this.props.args.layers);
 
     const map = new Map({
       basemap,
       layers: [graphicsLayer, ...featureLayers],
     });
+
+    this.addGeoJsonFeatures(graphicsLayer);
 
     this.mapView = new MapView({
       container: this.mapRef.current,
@@ -95,6 +89,59 @@ class GeomapComponent extends React.Component<GeomapProps> {
     }).catch((err) => {
       console.error("Failed to initialize map:", err);
     });
+  }
+
+  private createFeatureLayers(layers: GeomapProps["args"]["layers"]) {
+    return (layers?.map((config) => {
+      if (config.type && config.type === "feature") {
+        const layerConfig: any = {
+          url: config.url,
+          title: config.title,
+          //visible: config.visible,
+          //renderer: config.renderer,
+          //labelInfo: config.label_info,
+        };
+        return new FeatureLayer(layerConfig);
+      }
+      return null;
+    }) || []).filter((layer): layer is FeatureLayer => layer !== null);
+  }
+
+  private addGeoJsonFeatures(graphicsLayer: GraphicsLayer) {
+    if (this.props.args.geojson) {
+      const geojsonGraphics = this.props.args.geojson.features.map((feature: any) => {
+        let geometry;
+        const { type, coordinates } = feature.geometry;
+
+        if (type === "Point") {
+          geometry = new Point({
+            x: coordinates[0],
+            y: coordinates[1],
+          });
+        } else if (type === "LineString") {
+          /*
+          geometry = new __import__('@arcgis/core/geometry/Polyline').default({
+            paths: [coordinates],
+          });
+          */
+          return null;
+        } else if (type === "Polygon") {
+          /*
+          geometry = new __import__('@arcgis/core/geometry/Polygon').default({
+            rings: coordinates,
+          });
+          */
+          return null;
+        } else {
+          // Unsupported geometry type
+          return null;
+        }
+
+        const attributes = feature.properties;
+        return new Graphic({ geometry, attributes });
+      }).filter(Boolean);
+      graphicsLayer.addMany(geojsonGraphics);
+    }
   }
 
   render() {
